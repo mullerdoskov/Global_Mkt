@@ -1,0 +1,37 @@
+# ═══ Python ═══
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+dist/
+build/
+venv/
+.venv/
+*.egg
+
+# ═══ Ambiente ═══
+.env
+*.log
+market_platform.log*
+
+# ═══ IDE ═══
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ═══ OS ═══
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ═══ Dados locais ═══
+*.db
+*.sqlite3
+*.csv
+checkpoint_*.json
+exports/
+
+# ═══ Node (se frontend virar projeto Vite) ═══
+node_modules/

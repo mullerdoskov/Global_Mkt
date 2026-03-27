@@ -1,0 +1,18 @@
+# ═══ Core ═══
+fastapi>=0.100.0
+uvicorn>=0.25.0
+sqlalchemy>=2.0
+psycopg2-binary>=2.9
+pydantic-settings>=2.0
+python-dotenv>=1.0
+
+# ═══ Data & Ingestion ═══
+yfinance>=0.2.40
+pandas>=2.0
+numpy>=1.24
+
+# ═══ Utils ═══
+beautifulsoup4>=4.12
+requests>=2.31.0
+colorama>=0.4
+six>=1.5
