@@ -26,15 +26,19 @@ if not exist ".git" (
     echo   [1] Inicializando repositorio Git...
     git init
     git branch -M %BRANCH%
-    echo.
-    echo   [2] Configurando remote origin...
-    git remote add origin %REPO_URL%
-    echo       %REPO_URL%
-    echo.
-) else (
-    echo   [OK] Repositorio Git ja inicializado
-    echo.
 )
+
+:: SEMPRE garantir que o remote aponta pro URL correto
+git remote get-url origin >nul 2>&1
+if errorlevel 1 (
+    echo   [2] Adicionando remote origin...
+    git remote add origin %REPO_URL%
+) else (
+    echo   [2] Atualizando remote origin...
+    git remote set-url origin %REPO_URL%
+)
+echo       %REPO_URL%
+echo.
 
 :: Mostrar status
 echo   -- Status atual --
@@ -66,7 +70,6 @@ git add backend/ market.bat git_push.bat .gitignore .env.example README.md diagr
 echo   Backend e configs adicionados.
 goto :commit
 
-:: Commit
 :commit
 echo.
 echo   -- Commit --
@@ -84,13 +87,11 @@ if "%COMMIT_MSG%"=="" (
 git commit -m "%COMMIT_MSG%"
 if errorlevel 1 (
     echo.
-    echo   [ERRO] Commit falhou.
+    echo   [ERRO] Commit falhou. Talvez nao haja mudancas para commitar.
     pause
     goto :fim
 )
 
-:: Push
-:push
 echo.
 echo   -- Push --
 echo   Enviando para %REPO_URL% [%BRANCH%]
@@ -102,20 +103,17 @@ goto :push_ok
 
 :push_failed
 echo.
-echo   [!] Push falhou.
-echo       - Repositorio existe no GitHub?
-echo       - Autenticacao configurada? (gh auth login)
+echo   [!] Push falhou. Tentando com force...
 echo.
-set /p FORCE="  Tentar force push? [s/N]: "
-if /i "%FORCE%"=="s" (
-    git push -u origin %BRANCH% --force
-    if errorlevel 1 (
-        echo   [ERRO] Force push tambem falhou.
-    ) else (
-        goto :push_ok
-    )
+git push -u origin %BRANCH% --force
+if errorlevel 1 (
+    echo.
+    echo   [ERRO] Push falhou. Verifique:
+    echo     1. O repo existe no GitHub? Crie em github.com/new
+    echo     2. Autenticacao: rode "gh auth login" ou configure SSH
+    echo.
+    goto :fim
 )
-goto :fim
 
 :push_ok
 echo.
