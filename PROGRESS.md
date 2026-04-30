@@ -24,7 +24,7 @@ Ordem = prioridade de execução. Marcações:
 - [x] ISSUE-010 — Rate limiting com slowapi — PR #6, 2026-04-30 (https://github.com/mullerdoskov/Global_Mkt/pull/6)
 - [x] ISSUE-011 — Cache Redis com fastapi-cache2 — PR #7, 2026-04-30 (https://github.com/mullerdoskov/Global_Mkt/pull/7)
 - [x] ISSUE-012 — Validação robusta de `period` — PR #8, 2026-04-30 (https://github.com/mullerdoskov/Global_Mkt/pull/8)
-- [ ] ISSUE-013 — Implementar `net_debt_ebitda` real
+- [x] ISSUE-013 — Implementar `net_debt_ebitda` real — PR #9, 2026-04-30 (https://github.com/mullerdoskov/Global_Mkt/pull/9)
 - [ ] ISSUE-014 — Remover side effects de import
 
 ## Sprint 2 — Continuidade do briefing
@@ -40,6 +40,35 @@ Ordem = prioridade de execução. Marcações:
 - [ ] ISSUE-020 — WebSocket de preços real-time
 
 ## Histórico
+
+- 2026-04-30 — Run #9: ISSUE-013 resolvida.
+  `net_debt_ebitda` deixa de ser placeholder. Duas funções públicas novas em
+  `backend/ingestion/fundamentals_loader.py`: `compute_net_debt_ebitda(nd, eb)`
+  (puro, devolve `nd/eb` quando ambos são finitos e `eb != 0`; senão None) e
+  `latest_net_debt_ebitda(session, company_id)` (busca `FinancialStatement`
+  mais recente por `period_end DESC` e aplica a fórmula). O snapshot de
+  `valuation_multiples` agora carrega o campo via
+  `latest_net_debt_ebitda(session, company.id)` — chamado depois do `commit`
+  do bloco de demonstrações, então a métrica considera o Q recém-ingerido.
+  Comportamento explícito: `ebitda=0` no Q mais recente → None (não faz
+  fallback para o Q anterior). Justificativa em DECISIONS.md.
+  Funciona também quando yfinance retorna só `info` (sem novos statements):
+  o lookup busca o que já estava persistido, então o snapshot continua
+  carregando a métrica em vez de virar NULL na 2ª ingestão do dia.
+  Tests: `tests/test_net_debt_ebitda.py` adiciona 19 testes — 11 sobre a
+  função pura (5 cálculos parametrizados, 3 caminhos None, ebitda=0,
+  NaN/inf, tipo não numérico), 5 sobre o lookup (sem demonstração, 1
+  demonstração, ordenação cronológica fora de ordem, ebitda=0 sem fallback,
+  isolamento por company), e 3 de wiring no `ingest_financials_for_symbol`
+  (snapshot consome balance corrente; snapshot consome dados persistidos
+  quando yfinance não traz statements; snapshot fica None quando não há
+  demonstração). Total: 137/137 passando + 1 skip
+  (19 net_debt_ebitda + 65 periods + 9 cache + 7 rate_limit + 3 alembic +
+  23 smoke + 6 prices + 5 db_url).
+  Sem dependência de internet ou pandas: `_get_field` e `get_financials`
+  são mockados; banco é SQLite em memória criado via `Base.metadata.create_all`.
+  PR aberto sobre branch da PR #8 (stack) — auto-retarget para `main` quando
+  PRs anteriores mergearem.
 
 - 2026-04-30 — Run #8: ISSUE-012 resolvida.
   Validação estrita de `period` centralizada em `backend/api/_periods.py`.
