@@ -21,6 +21,23 @@ Formato: data — título, issue de referência, decisão, alternativas, trade-o
 
 ---
 
+## 2026-04-29 — `MARKET_DB_URL` passa a ser obrigatória (sem fallback)
+**Issue:** ISSUE-004
+**Decisão:** A variável de ambiente `MARKET_DB_URL` é agora obrigatória. Se ausente:
+- `backend/db/connection.py`: a função `_resolve_database_url()` levanta `RuntimeError`
+  com instrução de uso (exemplos para SQLite e PostgreSQL).
+- `backend/config/settings.py`: o campo `market_db_url` é declarado sem default;
+  pydantic-settings levanta `ValidationError` em `Settings()`.
+**Alternativas consideradas:** manter fallback apontando para SQLite local (mais
+amigável, mas mascara erro de configuração em prod); usar default vazio com
+validador customizado (aumenta superfície sem ganho).
+**Trade-off:** quem rodava localmente sem `.env` agora vê erro imediato em vez de
+conexão silenciosa contra DB inexistente. É o comportamento desejado: falhas de
+configuração devem ser explícitas. A documentação (`BACKEND_README.md`,
+`.env.example`) já orienta a copiar `.env.example` para `.env` antes de subir.
+
+---
+
 ## 2026-04-29 — Bootstrap do git em `market_platform_unified/` (pré-requisito não executado)
 **Issue:** N/A — procedimento de bootstrap
 **Decisão:** O pré-requisito de inicializar git em `market_platform_unified/` e conectar ao `mullerdoskov/Global_Mkt` não estava concluído quando a Routine rodou pela primeira vez. A Routine inicializou o repositório neste run, conectou ao remote existente, e abriu o PR #1. O histórico do nested `Global_Mkt_2.0/` (2 commits) não foi incorporado — a Routine não pode fazer força push nem rebase sem autorização humana. Lucas deve resolver o histórico em conjunto com ISSUE-001.

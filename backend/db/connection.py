@@ -11,10 +11,24 @@ from sqlalchemy.orm import sessionmaker, Session
 
 load_dotenv()
 
-DATABASE_URL = os.getenv(
-    "MARKET_DB_URL",
-    "postgresql+psycopg2://postgres:141592@localhost:5432/market_db"
-)
+
+def _resolve_database_url() -> str:
+    """Lê MARKET_DB_URL do ambiente. Aborta com mensagem clara se ausente.
+
+    Não há fallback: credenciais hardcoded violam PSCW e ISSUE-004.
+    """
+    url = os.getenv("MARKET_DB_URL")
+    if not url:
+        raise RuntimeError(
+            "MARKET_DB_URL não está definida. "
+            "Configure em .env ou variável de ambiente. Exemplos:\n"
+            "  - sqlite:///market_db.sqlite (desenvolvimento)\n"
+            "  - postgresql+psycopg2://USER:PASS@host:5432/dbname (produção)"
+        )
+    return url
+
+
+DATABASE_URL = _resolve_database_url()
 
 IS_SQLITE = DATABASE_URL.startswith("sqlite")
 

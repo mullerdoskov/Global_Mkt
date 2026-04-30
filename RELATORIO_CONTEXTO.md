@@ -87,7 +87,7 @@ C:\Users\lucas\Documents\Global_Mkt\market_platform_unified\
 
 ### Conexão:
 ```
-MARKET_DB_URL=postgresql+psycopg2://postgres:141592@localhost:5432/market_db
+MARKET_DB_URL=postgresql+psycopg2://postgres:SUA_SENHA@localhost:5432/market_db
 ```
 
 ---
