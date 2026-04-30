@@ -72,7 +72,7 @@ Editar `.env`:
 
 ```env
 # PostgreSQL (produção)
-MARKET_DB_URL=postgresql+psycopg2://postgres:141592@localhost:5432/market_db
+MARKET_DB_URL=postgresql+psycopg2://postgres:SUA_SENHA@localhost:5432/market_db
 
 # Ou SQLite (desenvolvimento)
 MARKET_DB_URL=sqlite:///market_db.sqlite

@@ -9,8 +9,8 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     """Configurações globais da aplicação."""
 
-    # Banco de dados
-    market_db_url: str = "postgresql+psycopg2://postgres:141592@localhost:5432/market_db"
+    # Banco de dados — obrigatório (sem default com credencial). Ver ISSUE-004.
+    market_db_url: str
 
     # CORS — origens permitidas
     cors_origins: str = "*"
