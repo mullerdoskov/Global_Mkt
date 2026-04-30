@@ -40,7 +40,7 @@ def get_market_summary() -> MarketSummaryResponse:
             if not asset:
                 # Tenta buscar mesmo assim, colocando None
                 indices_snapshot.append(
-                    IndexSnapshot(symbol=index_symbol, name=index_symbol, close=None, date=None, change_pct=None)
+                    IndexSnapshot(symbol=index_symbol, name=index_symbol, close=None, index_date=None, change_pct=None)
                 )
                 continue
 
@@ -69,13 +69,13 @@ def get_market_summary() -> MarketSummaryResponse:
                         symbol=index_symbol,
                         name=asset.name or index_symbol,
                         close=float(price_row.close),
-                        date=price_row.date,
+                        index_date=price_row.date,
                         change_pct=change_pct,
                     )
                 )
             else:
                 indices_snapshot.append(
-                    IndexSnapshot(symbol=index_symbol, name=asset.name or index_symbol, close=None, date=None)
+                    IndexSnapshot(symbol=index_symbol, name=asset.name or index_symbol, close=None, index_date=None)
                 )
 
         return MarketSummaryResponse(

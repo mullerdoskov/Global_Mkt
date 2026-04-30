@@ -135,7 +135,7 @@ class IndexSnapshot(BaseModel):
     symbol: str
     name: str
     close: Optional[float] = None
-    date: Optional[date] = None
+    index_date: Optional[date] = None
     change_pct: Optional[float] = None
 
 
