@@ -41,6 +41,47 @@ def _get_field(df, field_names):
     return None
 
 
+def compute_net_debt_ebitda(net_debt, ebitda):
+    """
+    Net Debt / EBITDA. Retorna None quando algum operando está ausente,
+    quando o EBITDA é zero (divisão indefinida) ou quando o resultado não é
+    finito (NaN/inf). Aceita Decimal/float/int/None.
+    """
+    if net_debt is None or ebitda is None:
+        return None
+    try:
+        nd = float(net_debt)
+        eb = float(ebitda)
+    except (TypeError, ValueError):
+        return None
+    if np.isnan(nd) or np.isnan(eb) or np.isinf(nd) or np.isinf(eb):
+        return None
+    if eb == 0:
+        return None
+    ratio = nd / eb
+    if np.isnan(ratio) or np.isinf(ratio):
+        return None
+    return ratio
+
+
+def latest_net_debt_ebitda(session, company_id):
+    """
+    Busca a `FinancialStatement` mais recente da empresa (maior `period_end`)
+    e devolve `Net Debt / EBITDA` calculado a partir dos campos persistidos.
+    Retorna None se a empresa não tem demonstração ou se algum operando
+    está ausente/zero.
+    """
+    latest = session.execute(
+        select(FinancialStatement)
+        .where(FinancialStatement.company_id == company_id)
+        .order_by(FinancialStatement.period_end.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+    if latest is None:
+        return None
+    return compute_net_debt_ebitda(latest.net_debt, latest.ebitda)
+
+
 def ingest_financials_for_symbol(client: YFinanceClient, symbol: str) -> tuple[int, int]:
     """
     Ingere dados financeiros e múltiplos de valuation para um ticker.
@@ -161,11 +202,8 @@ def ingest_financials_for_symbol(client: YFinanceClient, symbol: str) -> tuple[i
                 "current_ratio": _safe(info.get("currentRatio")),
                 "dividend_yield": _safe(info.get("dividendYield")),
                 "payout_ratio": _safe(info.get("payoutRatio")),
+                "net_debt_ebitda": latest_net_debt_ebitda(session, company.id),
             }
-
-            # Calcula Net Debt/EBITDA se possível
-            ev_ebitda = snapshot.get("ev_ebitda")
-            # placeholder — full calc requires balance + income data
 
             if IS_SQLITE:
                 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
