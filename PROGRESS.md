@@ -43,9 +43,51 @@ Ordem = prioridade de execução. Marcações:
 
 - [x] ISSUE-021 — CI no GitHub Actions (`alembic upgrade head` + `pytest` em SQLite) — PR #16, 2026-04-30 (https://github.com/mullerdoskov/Global_Mkt/pull/16)
 - [ ] ISSUE-022 — Comitar SKILL.md dos agents do ecossistema em `.claude/skills/` (pré-req #5 do prompt original)
-- [ ] ISSUE-023 — Backups automáticos do PostgreSQL (`pg_dump` semanal + retention mensal)
+- [x] ISSUE-023 — Backups automáticos do PostgreSQL (`pg_dump` semanal + retenção 90 dias) — PR #17, 2026-04-30 (https://github.com/mullerdoskov/Global_Mkt/pull/17)
 
 ## Histórico
+
+- 2026-04-30 — Run #17: ISSUE-023 resolvida.
+  Backups automáticos do PostgreSQL via `pg_dump` em formato custom
+  (`-Fc`, já comprimido). Três scripts em `scripts/`:
+  `backup_postgres.ps1` (Windows Task Scheduler), `backup_postgres.sh`
+  (cron / WSL), `Register-BackupTask.ps1` (registrador idempotente do
+  Task Scheduler).
+  Os wrappers fazem environment setup (resolvem root, carregam `.env`),
+  validam que `MARKET_DB_URL` existe e não é SQLite (backup pg_dump
+  não se aplica a DB de arquivo — abort com mensagem clara), e
+  disparam `pg_dump --dbname=<URL stripped do +psycopg2> -Fc -f
+  <BACKUP_DIR>/market_db_<UTC>.dump`. Após o dump, purga arquivos com
+  mtime mais antigo que `BACKUP_RETENTION_DAYS` (default 90).
+  Logs por run em `logs/backups/backup_<UTC>.log` (timestamp UTC para
+  evitar ambiguidade de fuso). Senha **não** é logada — só o caminho
+  do binário pg_dump, tamanho do dump, e mensagens de erro do
+  pg_dump (que não imprime a senha).
+  Contrato de exit code: `0` OK, `1` falha hard (pg_dump não no PATH,
+  URL ausente / sqlite, dump não-zero), `2` dump OK mas retenção
+  gerou warnings (ex.: arquivo bloqueado por outro processo).
+  Schedule: `Register-BackupTask.ps1` registra trigger **semanal**
+  (domingo 03:00 hora local), `StartWhenAvailable`,
+  `ExecutionTimeLimit=1h`, idempotente (Unregister-then-Register).
+  Decisão sobre semanal-vs-diário e formato custom-vs-plain registrada
+  em DECISIONS.md.
+  Tests: `tests/test_backups.py` adiciona 21 testes — 3 sobre
+  existência dos 3 scripts, 7 static checks sobre o `.ps1` wrapper
+  (carrega .env, aborta em sqlite, usa pg_dump -Fc, escreve log per
+  run UTC, retenção por LastWriteTime, default 90, 3 exit codes), 6
+  static checks sobre o `.sh` wrapper (shebang, strict mode,
+  carrega .env, aborta em sqlite, pg_dump -Fc, retenção via
+  `find -mtime`, e `bash -n` quando bash existir), e 5 sobre o
+  `Register-BackupTask.ps1` (trigger Weekly Sunday 03:00, aponta para
+  o wrapper certo, idempotente, propaga RetentionDays). Total:
+  270/270 passando + 1 skip pré-existente (21 backups + 249 anteriores).
+  Sem dependência nova em `requirements.txt` — pg_dump é binário do
+  PostgreSQL client, não pacote Python.
+  `.gitignore` ganha `logs/backups/` e `backups/` (dumps são dados,
+  não código). `.env.example` documenta `BACKUP_DIR`,
+  `BACKUP_RETENTION_DAYS`, `BACKUP_LOG_DIR`.
+  PR aberto sobre branch da PR #16 (stack) — auto-retarget para `main`
+  quando PRs anteriores mergearem.
 
 - 2026-04-30 — Run #16: ISSUE-021 resolvida.
   Primeiro gate de CI automático no GitHub Actions. Workflow único em

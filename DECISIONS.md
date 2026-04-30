@@ -5,6 +5,114 @@ Formato: data — título, issue de referência, decisão, alternativas, trade-o
 
 ---
 
+## 2026-04-30 — Backups automáticos do PostgreSQL: pg_dump custom semanal + retenção 90d
+**Issue:** ISSUE-023 (não-catalogada, alavanca alta)
+**Decisão:** Backups via `pg_dump --dbname=<URL> -Fc -f <BACKUP_DIR>/market_db_<UTC>.dump`,
+disparados pelo Windows Task Scheduler **semanalmente** (domingo 03:00
+hora local) através de `scripts/backup_postgres.ps1`. Wrapper paralelo
+`backup_postgres.sh` para cron/WSL. Registrador idempotente em
+`scripts/Register-BackupTask.ps1`. Sem módulo Python — diferente do
+ISSUE-015, aqui não há lógica de negócio a testar (pg_dump faz o
+trabalho); os testes são todos static checks sobre os 3 scripts.
+Retenção: deletar arquivos `market_db_*.dump` com mtime mais antigo
+que `BACKUP_RETENTION_DAYS` (default 90 dias = ~12 dumps na janela).
+Exit codes idênticos ao ISSUE-015: 0 OK, 1 hard fail (pg_dump não
+no PATH, URL ausente, URL sqlite, dump não-zero), 2 dump OK mas
+retenção com warnings.
+
+**Alternativas consideradas:**
+1. **Diário em vez de semanal.** Market data muda diariamente, então a
+   tentação é fazer backup diário. Mas: (i) o pipeline de ingestão
+   (ISSUE-015) já roda às 22:00 e re-baixa as últimas 5 sessões em
+   cada run — a janela de "perda de dado por crash entre backups"
+   é coberta pelo próprio re-download da fonte (yfinance é idempotente);
+   (ii) um pg_dump em market_db de tamanho típico (2-3 GB) consome
+   minutos de IO e, em disco SSD compartilhado com a aplicação, pode
+   degradar latência da API se rodar em horário de mercado;
+   (iii) retenção de 7 backups diários = 7 dias, frágil contra
+   problema percebido tarde. Semanal + retenção 90 dias = ~12 dumps
+   = 3 meses de cobertura. Migrar pra diário se ingest virar
+   manual/cara (ex.: provider pago com rate cap) ou se houver
+   requisito de RTO/RPO menor.
+2. **Plain SQL (`-Fp`) em vez de custom (`-Fc`).** Plain é texto puro,
+   diff-able, restorável com `psql < file`. Custom é binário, requer
+   `pg_restore`. Custom escolhido porque: (i) já vem comprimido, sem
+   pipe extra para gzip; (ii) suporta restore parcial (table-by-table,
+   schema-only) e parallel restore (`pg_restore -j N`); (iii) preserva
+   privilégios e sequences sem ambiguidade. Plain só vence se o objetivo
+   for comparar versões em diff humano — não é o caso aqui.
+3. **Retenção por contagem (`keep latest N`) em vez de mtime.** Mtime é
+   simples — `Get-ChildItem | Where-Object LastWriteTime -lt cutoff`
+   ou `find -mtime +N`. Contagem exige sort + skip + delete, mais
+   lógica para o mesmo efeito quando o schedule é regular. Aceito que
+   um dump faltando por crash semanal degrada a cobertura — o trigger
+   semanal manda dump na semana seguinte e a janela se recompõe.
+4. **Snapshot `monthly/` em subdir para retenção mais longa (1 ano).**
+   Adicionaria ~30 linhas e uma camada nova ("é o backup do dia 1
+   do mês"). Hoje, com 1 máquina e 1 DB, retenção 90d cobre o
+   horizonte de detecção realista (problema percebido em até 3 meses).
+   Adicionar quando virar requisito formal (ex.: auditoria, LGPD,
+   contrato com cliente). Issue separada.
+5. **Backup encriptado em repouso (gpg/age).** O `.dump` contém
+   PII zero (são preços e fundamentos públicos), então criptografar em
+   repouso seria over-engineering. Se algum dia entrar dado sensível
+   (watchlist do ISSUE-018 já tem cookie UUID — anônimo, sem PII), aí
+   reavaliar. Issue separada quando necessário.
+6. **Off-host (S3, Backblaze, OneDrive sync).** Single-machine + dump
+   no mesmo disco protege contra corrupção lógica (ex.: DROP TABLE
+   acidental, migration bug) mas não contra falha de hardware. Off-host
+   é a próxima evolução natural — `aws s3 cp` ou `rclone copy` no fim
+   do wrapper. Não bundle nesta PR para preservar a "30 linhas de
+   PowerShell" do orientativo. Issue dedicada quando o off-host for
+   escolhido (S3 vs Backblaze vs Wasabi vs OneDrive).
+7. **Sem módulo Python (diferente do ISSUE-015).** Aqui o trabalho é
+   `pg_dump`, não Python. O wrapper só faz environment setup. Forçar
+   um módulo `backend.scheduling.backup` adicionaria abstração sem
+   ganho — não há lógica testável em "exec pg_dump e prune por mtime".
+   Static checks sobre os scripts (existem, contêm os strings certos,
+   `bash -n`) cobrem o suficiente para detectar regressão de copia/cola.
+8. **URL passthrough vs `PGPASSWORD` env var.** Senha vai pela URL no
+   argumento de pg_dump. Em sistemas onde `/proc/<pid>/cmdline` é
+   lido por outros usuários (Linux com `hidepid=0`), há janela de
+   exposição. Em Windows + máquina single-user, o risco é teórico.
+   Aceitável para o estágio atual; documentar `~/.pgpass` como
+   melhoria futura se a máquina virar multi-tenant.
+
+**Trade-off:**
+- **Semanal vs diário:** uma semana de janela de perda em caso de crash
+  entre backups. Mitigado pelo fato de o data lake fonte (yfinance) ser
+  idempotente — re-download cobre a perda. Aceitável para o estágio.
+- **Retenção 90 dias vs maior:** 90 dias = ~12 dumps. 12 cópias é
+  cobertura razoável para detectar problema lógico em janela de
+  trimestre. Disco a 2-3 GB × 12 = ~30 GB — folgado em qualquer
+  máquina moderna, mas se virar restrição, ajustar `BACKUP_RETENTION_DAYS`.
+- **Sem off-host:** disco do servidor falhou → backup foi junto. Risco
+  conhecido. Issue separada para off-host (#TBD) quando o requisito
+  formal aparecer (compliance, auditoria, ou simplesmente segunda
+  máquina disponível).
+- **Sem teste de restore automatizado:** o fluxo `pg_restore -d test_db`
+  contra um dump real é o que prova que o backup é útil. Não testado
+  no CI (precisa Postgres vivo, divergência conhecida em ISSUE-021).
+  Documentar como passo manual em runbook de DR.
+
+**Como aplicar:**
+1. Após merge da stack até esta PR, copiar `.env.example` → `.env` se
+   ainda não fez, e (opcional) ajustar `BACKUP_DIR` /
+   `BACKUP_RETENTION_DAYS`.
+2. Garantir que `pg_dump` está no PATH (instalado com PostgreSQL
+   client). Em Windows: `winget install PostgreSQL.PostgreSQL`. Em
+   Linux: `apt install postgresql-client`.
+3. Registrar o job no Task Scheduler:
+   `pwsh.exe -NoProfile -ExecutionPolicy Bypass -File scripts\Register-BackupTask.ps1`
+   ou em Linux/cron, adicionar linha em `crontab -e`:
+   `0 3 * * 0 /caminho/para/scripts/backup_postgres.sh`.
+4. Disparar uma run manual primeiro para validar:
+   `powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\backup_postgres.ps1`.
+   Conferir que `backups/postgres/market_db_<UTC>.dump` foi criado e
+   que `logs/backups/backup_<UTC>.log` mostra `Run concluido. dump_ok=1`.
+
+---
+
 ## 2026-04-30 — CI no GitHub Actions: SQLite-only, sem Postgres no runner
 **Issue:** ISSUE-021 (não-catalogada, alavanca alta)
 **Decisão:** Workflow único em `.github/workflows/ci.yml`, dispara em
