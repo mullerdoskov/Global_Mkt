@@ -20,7 +20,7 @@ Ordem = prioridade de execução. Marcações:
 
 ## Sprint 1 — Escala
 
-- [ ] ISSUE-009 — Alembic + migrações iniciais
+- [x] ISSUE-009 — Alembic + migrações iniciais — PR #5, 2026-04-29
 - [ ] ISSUE-010 — Rate limiting com slowapi
 - [ ] ISSUE-011 — Cache Redis com fastapi-cache2
 - [ ] ISSUE-012 — Validação robusta de `period`
@@ -40,6 +40,24 @@ Ordem = prioridade de execução. Marcações:
 - [ ] ISSUE-020 — WebSocket de preços real-time
 
 ## Histórico
+
+- 2026-04-29 — Run #5: ISSUE-009 resolvida.
+  Alembic configurado em `market_platform_unified/`. `alembic.ini` na raiz,
+  `alembic/env.py` lê `MARKET_DB_URL` do ambiente (sem `sqlalchemy.url` no ini —
+  evita versionar credencial), `target_metadata = backend.db.schema.Base.metadata`,
+  `render_as_batch=True` quando dialeto é SQLite. `alembic/versions/1a4f86d9547c_initial_schema.py`
+  cobre as 9 tabelas + índices + UNIQUE constraints (gerado via autogenerate
+  contra SQLite vazio, depois ajustado para dropar os 3 ENUMs do Postgres
+  no downgrade — autogenerate deixa esses tipos órfãos por padrão).
+  `create_all_tables()` mantido no startup como rede de segurança em dev
+  (idempotente); o canônico em prod passa a ser `alembic upgrade head` antes
+  de subir a API. Documentado em `BACKEND_README.md` seção "Migrações de schema"
+  e em `README.md`. Tests: `tests/test_alembic_migration.py` adiciona 3 testes
+  (upgrade head, round-trip up→down→up, e drift entre `Base.metadata` e a head
+  via `compare_metadata`). Total: 37/37 testes passando (3 alembic + 23 smoke
+  + 6 prices + 5 db_url validation).
+  PR aberto sobre branch da PR #4 (stack) — auto-retarget para `main` quando
+  PRs anteriores mergearem.
 
 - 2026-04-29 — Run #4: ISSUE-007 resolvida.
   `frontend/index.html` agora é servido pelo próprio FastAPI via

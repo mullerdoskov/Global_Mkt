@@ -88,6 +88,52 @@ desenvolvimento local, basta abrir `http://localhost:8000/`.
 
 ---
 
+## 2026-04-29 — Alembic adotado; `MARKET_DB_URL` é fonte única de configuração de banco
+**Issue:** ISSUE-009
+**Decisão:** Alembic instalado em `market_platform_unified/alembic/` com
+`alembic.ini` na raiz. `sqlalchemy.url` **NÃO** é declarada no ini — `env.py`
+lê `MARKET_DB_URL` do ambiente, mesmo contrato exigido pelo backend desde
+ISSUE-004. Schema canônico passa a ser o da migração head; `Base.metadata`
+em `backend/db/schema.py` permanece como fonte da verdade para o autogenerate.
+`render_as_batch=True` quando o dialeto é SQLite (necessário para `ALTER`
+em SQLite que não suporta operações in-place). `create_all_tables()` mantido
+no lifespan do FastAPI como rede de segurança em dev (é idempotente); em prod
+o procedimento canônico é `alembic upgrade head` antes de iniciar a API.
+**Alternativas consideradas:** (a) Declarar `sqlalchemy.url` em `alembic.ini`
+com placeholder e substituir via `%(MARKET_DB_URL)s` — rejeitada por dar a
+falsa impressão de que a URL pertence ao ini; (b) Importar `engine` direto de
+`backend.db.connection` em `env.py` — rejeitada porque esse módulo cria pool
+e instancia engine global no top-level, side effects que não pertencem ao
+processo do alembic; (c) Remover `create_all_tables()` agora — adiada para
+ISSUE-014 (remover side effects de import) para manter o diff focado.
+**Trade-off:** mais um pré-requisito documentado para subir a API em prod
+("rode `alembic upgrade head` antes do `uvicorn`"). Em troca, evolução de
+schema vira PR rastreável e reversível em vez de mutação implícita via
+`Base.metadata.create_all`.
+
+---
+
+## 2026-04-29 — Migração inicial: cleanup explícito de ENUMs Postgres no downgrade
+**Issue:** ISSUE-009
+**Decisão:** Adicionado ao `downgrade()` da migração `1a4f86d9547c_initial_schema.py`
+um bloco que dropa explicitamente os três tipos ENUM (`assettype`, `periodtype`,
+`ingestionstatus`) com `checkfirst=True` após `drop_table`. O autogenerate do
+alembic tem um buraco conhecido: para `sa.Enum(..., name=...)`, ele cria o tipo
+implicitamente em `op.create_table()` mas não dropa em `op.drop_table()`. Em
+SQLite isso é no-op (ENUM vira CHECK constraint embutido na tabela), mas em
+Postgres o tipo fica órfão e o próximo upgrade falha com "type already exists".
+**Alternativas consideradas:** (a) Usar `sa.Enum(..., create_type=False)` e
+emitir `op.execute("CREATE TYPE ...")` manual — mais verboso, mais código que
+o autogenerate não regera; (b) Aceitar o bug e documentar que downgrade não
+funciona em Postgres — rejeitada porque o teste de round-trip
+`test_round_trip_upgrade_downgrade_upgrade` é a única forma confiável de
+detectar drift de migração no CI.
+**Trade-off:** divergência menor entre o que `alembic revision --autogenerate`
+emitiria por padrão e o que está commitado. Documentado no docstring do
+arquivo de migração para o próximo agent saber que essa edição é intencional.
+
+---
+
 ## 2026-04-29 — Bootstrap do git em `market_platform_unified/` (pré-requisito não executado)
 **Issue:** N/A — procedimento de bootstrap
 **Decisão:** O pré-requisito de inicializar git em `market_platform_unified/` e conectar ao `mullerdoskov/Global_Mkt` não estava concluído quando a Routine rodou pela primeira vez. A Routine inicializou o repositório neste run, conectou ao remote existente, e abriu o PR #1. O histórico do nested `Global_Mkt_2.0/` (2 commits) não foi incorporado — a Routine não pode fazer força push nem rebase sem autorização humana. Lucas deve resolver o histórico em conjunto com ISSUE-001.
