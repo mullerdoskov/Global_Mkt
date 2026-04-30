@@ -1,6 +1,6 @@
 """
 data/sectors_gics.py
-34 setores GICS com nome em PT-BR, 12 países, mapeamento de tickers para setores.
+34 setores GICS com nome em PT-BR, 13 países, mapeamento de tickers para setores.
 """
 
 # ══════════════════════════════════════════════
@@ -90,7 +90,7 @@ SECTORS_GICS = [
 ]
 
 # ══════════════════════════════════════════════
-# PAÍSES (12)
+# PAÍSES (13)
 # ══════════════════════════════════════════════
 COUNTRIES = [
     {"iso2": "BR", "iso3": "BRA", "name": "Brazil", "name_pt": "Brasil",
@@ -113,6 +113,8 @@ COUNTRIES = [
      "region": "Asia", "currency_code": "CNY", "main_exchange": "SSE/SZSE", "yf_suffix": ".SS"},
     {"iso2": "AU", "iso3": "AUS", "name": "Australia", "name_pt": "Austrália",
      "region": "Oceania", "currency_code": "AUD", "main_exchange": "ASX", "yf_suffix": ".AX"},
+    {"iso2": "HK", "iso3": "HKG", "name": "Hong Kong", "name_pt": "Hong Kong",
+     "region": "Asia", "currency_code": "HKD", "main_exchange": "HKEX", "yf_suffix": ".HK"},
     {"iso2": "CA", "iso3": "CAN", "name": "Canada", "name_pt": "Canadá",
      "region": "Americas", "currency_code": "CAD", "main_exchange": "TSX", "yf_suffix": ".TO"},
     {"iso2": "XX", "iso3": "XXX", "name": "Global", "name_pt": "Global",
