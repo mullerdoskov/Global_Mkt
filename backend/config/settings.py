@@ -3,6 +3,8 @@ config/settings.py
 Configurações centralizadas usando pydantic-settings.
 """
 
+from typing import Optional
+
 from pydantic_settings import BaseSettings
 
 
@@ -31,6 +33,14 @@ class Settings(BaseSettings):
     # afetar smoke tests, e pode ser desligado em dev local se necessário.
     rate_limit_default: str = "60/minute"
     rate_limit_enabled: bool = True
+
+    # Cache (ISSUE-011). Se `redis_url` setada, o backend de cache vira Redis
+    # (e na presença de multi-worker, distribuído entre eles). Se não setada,
+    # cai em InMemoryBackend (process-local). `cache_enabled=False` transforma
+    # `@cache(...)` em no-op — testes usam isso, e dev local pode usar para
+    # depurar sem interferência de cache.
+    redis_url: Optional[str] = None
+    cache_enabled: bool = True
 
     class Config:
         """Configuração de origem dos valores."""

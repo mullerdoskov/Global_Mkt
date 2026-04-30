@@ -22,6 +22,7 @@ from backend.db.schema import create_all_tables
 from backend.api.router import api_router
 from backend.api.models import HealthResponse
 from backend.api._limiter import limiter
+from backend.api._cache import init_cache_async
 
 # Diretório com o SPA estático (frontend/index.html). Resolvido a partir de
 # backend/app.py para não depender do CWD em que uvicorn for invocado.
@@ -58,6 +59,15 @@ async def lifespan(app: FastAPI):
         logger.info("✅ Tabelas criadas/verificadas")
     except Exception as e:
         logger.error(f"⚠️  Erro ao criar tabelas: {e}")
+
+    # Cache (ISSUE-011): tenta upgrade para Redis se REDIS_URL setada; caso
+    # contrário mantém o InMemoryBackend já instalado em escopo de import por
+    # `backend.api._cache`. Falha no Redis cai silenciosamente em InMemory.
+    backend_name, redis_active = await init_cache_async()
+    logger.info(
+        f"✅ Cache: backend={backend_name}, "
+        f"enabled={'sim' if settings.cache_enabled else 'NÃO (no-op)'}"
+    )
 
     logger.info("✅ Backend iniciado com sucesso")
 

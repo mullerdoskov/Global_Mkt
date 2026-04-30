@@ -1,0 +1,53 @@
+# docker-compose.dev.yml
+# Stack de dependências externas para desenvolvimento local da Market Data
+# Platform. Não inclui o backend nem o frontend — esses rodam direto via
+# `python -m uvicorn backend.app:app --reload` (ver BACKEND_README.md).
+#
+# Subir:   docker compose -f docker-compose.dev.yml up -d
+# Parar:   docker compose -f docker-compose.dev.yml down
+# Logs:    docker compose -f docker-compose.dev.yml logs -f
+#
+# Serviços expõem portas em localhost — combina com os defaults do .env.example
+# (REDIS_URL=redis://localhost:6379/0, MARKET_DB_URL=...localhost:5432...).
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: mp-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Postgres é opcional aqui — alguns devs já têm Postgres nativo na máquina.
+  # Comente o bloco se já tiver Postgres rodando em localhost:5432, ou ajuste
+  # a porta para 5433 se quiser ambos coexistindo.
+  postgres:
+    image: postgres:17-alpine
+    container_name: mp-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: market_db
+      POSTGRES_USER: postgres
+      # Senha obrigatória, sem default. Setar via .env do dev ou inline:
+      #   POSTGRES_PASSWORD=xxx docker compose -f docker-compose.dev.yml up -d
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD obrigatório}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d market_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  redis_data:
+  postgres_data:
