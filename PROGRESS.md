@@ -25,7 +25,7 @@ Ordem = prioridade de execução. Marcações:
 - [x] ISSUE-011 — Cache Redis com fastapi-cache2 — PR #7, 2026-04-30 (https://github.com/mullerdoskov/Global_Mkt/pull/7)
 - [x] ISSUE-012 — Validação robusta de `period` — PR #8, 2026-04-30 (https://github.com/mullerdoskov/Global_Mkt/pull/8)
 - [x] ISSUE-013 — Implementar `net_debt_ebitda` real — PR #9, 2026-04-30 (https://github.com/mullerdoskov/Global_Mkt/pull/9)
-- [x] ISSUE-014 — Remover side effects de import — PR aberto, 2026-04-30
+- [x] ISSUE-014 — Remover side effects de import — PR #10, 2026-04-30 (https://github.com/mullerdoskov/Global_Mkt/pull/10)
 
 ## Sprint 2 — Continuidade do briefing
 
