@@ -5,7 +5,7 @@ Endpoints de preços históricos e retornos.
 
 from typing import Optional
 from datetime import date, timedelta
-from fastapi import APIRouter, Query, HTTPException, Request
+from fastapi import APIRouter, Query, HTTPException, Request, Depends
 from sqlalchemy import select
 import pandas as pd
 
@@ -14,28 +14,9 @@ from backend.db.connection import get_session
 from backend.db.schema import Asset, PriceDaily
 from backend.api.models import PriceHistoryResponse, PriceBar, ReturnsResponse, ReturnData, LatestPricesResponse, LatestPrice
 from backend.api._limiter import limiter
+from backend.api._periods import ParsedPeriod, period_dep
 
 router = APIRouter(prefix="/prices", tags=["prices"])
-
-
-def _parse_period(period: str) -> int:
-    """
-    Converte período (ex: '90d', '1y') para dias.
-
-    Formatos suportados:
-    - '30d' = 30 dias
-    - '1y' ou '12m' = 365 dias
-    """
-    if period.endswith("d"):
-        return int(period[:-1])
-    elif period.endswith("m"):
-        months = int(period[:-1])
-        return months * 30
-    elif period.endswith("y"):
-        years = int(period[:-1])
-        return years * 365
-    else:
-        return 90  # Default
 
 
 @router.get("/{symbol}/history", response_model=PriceHistoryResponse)
@@ -43,7 +24,7 @@ def _parse_period(period: str) -> int:
 def get_price_history(
     request: Request,
     symbol: str,
-    period: str = Query("90d", description="Período: 30d, 1y, etc."),
+    period: ParsedPeriod = Depends(period_dep),
     interval: str = Query("1d", description="Intervalo: 1d (diário), não suportado intraday no momento"),
 ) -> PriceHistoryResponse:
     """
@@ -51,7 +32,8 @@ def get_price_history(
 
     Parâmetros:
     - symbol: Símbolo do ativo (ex: PETR3.SA, AAPL)
-    - period: Período de dados (default: 90d). Formatos: 30d, 1y, 6m, etc.
+    - period: Período de dados (default: 90d). Validado por `_periods.parse_period`
+      — aceita `<n><d|w|m|y>` no range 1d..10y; outros valores → 422.
     - interval: Intervalo (default: 1d para diário)
     """
     session = get_session()
@@ -65,8 +47,7 @@ def get_price_history(
             raise HTTPException(status_code=404, detail=f"Asset '{symbol}' not found")
 
         # Calcula data inicial
-        days = _parse_period(period)
-        start_date = date.today() - timedelta(days=days)
+        start_date = date.today() - timedelta(days=period.days)
 
         # Busca preços
         prices_query = select(PriceDaily).where(
@@ -91,7 +72,7 @@ def get_price_history(
 
         return PriceHistoryResponse(
             symbol=symbol,
-            period=period,
+            period=period.raw,
             interval=interval,
             count=len(price_bars),
             prices=price_bars,
@@ -106,7 +87,7 @@ def get_price_history(
 def get_returns(
     request: Request,
     symbol: str,
-    period: str = Query("90d", description="Período: 30d, 1y, etc."),
+    period: ParsedPeriod = Depends(period_dep),
 ) -> ReturnsResponse:
     """
     Calcula retorno diário e acumulado de um ativo.
@@ -114,6 +95,9 @@ def get_returns(
     Retorna:
     - daily_return: retorno do dia anterior
     - cumulative_return: retorno acumulado desde o início do período
+
+    `period` é validado por `_periods.parse_period` — aceita `<n><d|w|m|y>`
+    no range 1d..10y; outros valores → 422.
     """
     session = get_session()
     try:
@@ -126,8 +110,7 @@ def get_returns(
             raise HTTPException(status_code=404, detail=f"Asset '{symbol}' not found")
 
         # Calcula data inicial
-        days = _parse_period(period)
-        start_date = date.today() - timedelta(days=days)
+        start_date = date.today() - timedelta(days=period.days)
 
         # Busca preços
         prices_query = select(PriceDaily).where(
@@ -138,7 +121,7 @@ def get_returns(
         price_rows = session.execute(prices_query).scalars().all()
 
         if not price_rows:
-            return ReturnsResponse(symbol=symbol, period=period, count=0, returns=[])
+            return ReturnsResponse(symbol=symbol, period=period.raw, count=0, returns=[])
 
         # Calcula retornos com pandas
         df = pd.DataFrame([
@@ -167,7 +150,7 @@ def get_returns(
 
         return ReturnsResponse(
             symbol=symbol,
-            period=period,
+            period=period.raw,
             count=len(returns),
             returns=returns,
         )
