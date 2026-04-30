@@ -32,7 +32,7 @@ Ordem = prioridade de execução. Marcações:
 - [x] ISSUE-015 — Agendamento incremental — PR #11, 2026-04-30 (https://github.com/mullerdoskov/Global_Mkt/pull/11)
 - [x] ISSUE-016 — Adicionar ativos asiáticos (JP/AU/HK) — PR #12, 2026-04-30 (https://github.com/mullerdoskov/Global_Mkt/pull/12)
 - [x] ISSUE-017 — Endpoint `/api/export/{symbol}.csv` — PR #13, 2026-04-30 (https://github.com/mullerdoskov/Global_Mkt/pull/13)
-- [ ] ISSUE-018 — Watchlist persistente (DB)
+- [ ] ISSUE-018 — Watchlist persistente (DB) — ADR registrado em PR #14 (cookie UUID anônimo); implementação pendente
 
 ## Sprint 3 — Opcional, sem prioridade
 
@@ -40,6 +40,30 @@ Ordem = prioridade de execução. Marcações:
 - [ ] ISSUE-020 — WebSocket de preços real-time
 
 ## Histórico
+
+- 2026-04-30 — Run #14: ADR de ISSUE-018 registrado (sem implementação).
+  A orientação do run anterior pediu ADR formal antes de pegar
+  ISSUE-018 (watchlist persistente) por ter decisão arquitetural
+  prévia: identidade do usuário (cookie UUID anônimo vs M365 SSO).
+  ADR escrito em `DECISIONS.md` com 7 escolhas explícitas:
+  cookie `mdp_session` (UUID v4, HttpOnly, Secure-em-prod, SameSite=Lax,
+  Max-Age=10y) gerado no servidor no 1º request; tabelas
+  `user_sessions` (uuid PK) e `watchlist_items` (session_uuid FK,
+  asset_id FK, position, UNIQUE(session_uuid, asset_id)); 3 endpoints
+  idempotentes (`GET/POST/DELETE /api/watchlist[/symbol]`); migration
+  Alembic puramente aditiva; rate limits dedicados
+  (`watchlist_read=120/min`, `watchlist_write=30/min`); endpoint de
+  export CSV via infra do ISSUE-017 como mitigação ao pior cenário
+  (limpeza de cookie). Recomendação ESCOLHIDA: cookie UUID anônimo
+  para o MVP, com porta de migração documentada para SSO M365 quando
+  os gatilhos chegarem (>1 usuário simultâneo, requisito de auditoria,
+  permissão granular). Critério de aceite e plano de testes
+  documentados no próprio ADR para o run que pegar a implementação.
+  Sem código, sem schema novo, sem dependência nova — só `DECISIONS.md`
+  e `PROGRESS.md`. ISSUE-018 permanece aberta no checklist; PR #14 é
+  estritamente preparatório.
+  PR aberto sobre branch da PR #13 (stack) — auto-retarget para `main`
+  quando PRs anteriores mergearem.
 
 - 2026-04-30 — Run #13: ISSUE-017 resolvida.
   Novo endpoint `GET /api/export/{symbol}.csv` em `backend/api/export.py`,

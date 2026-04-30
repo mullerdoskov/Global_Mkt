@@ -5,6 +5,203 @@ Formato: data — título, issue de referência, decisão, alternativas, trade-o
 
 ---
 
+## 2026-04-30 — Watchlist persistente: identidade via cookie UUID anônimo (MVP), com porta de migração para SSO
+**Issue:** ISSUE-018 (ADR pré-implementação — implementação pendente em run futuro)
+**Decisão:** A watchlist persistente usa um identificador opaco de sessão
+gerado e armazenado em cookie HTTP no primeiro acesso, sem autenticação
+de usuário. O servidor trata o cookie como chave de sessão sem PII e o
+liga a uma linha de `user_sessions` no banco. As watchlist items
+referenciam essa session, não um `user_id`. Sete escolhas explícitas:
+
+1. **Cookie `mdp_session` com UUID v4** (~122 bits de entropia), gerado
+   no servidor na primeira request que não tiver o cookie. Atributos:
+   `HttpOnly` (impede leitura via JS, mitiga XSS), `Secure` (default
+   `True` em prod via setting; relaxável em dev/local com
+   `SESSION_COOKIE_SECURE=false` no `.env`), `SameSite=Lax` (envia em
+   navegação top-level mas bloqueia POST cross-site — cobre 99% do
+   threat model do MVP sem precisar de CSRF token explícito),
+   `Max-Age=315360000` (10 anos — efetivamente persistente para o ciclo
+   de vida do MVP), `Path=/`. Sem `Domain` (default = origem da request).
+
+2. **Tabela `user_sessions`** (PK `uuid UUID`, `created_at`,
+   `last_seen_at`) gerenciada num middleware/dependency
+   `ensure_session(request, response)` em `backend/api/_session.py`.
+   A dependency: (a) lê o cookie `mdp_session`; (b) se ausente ou
+   inválido (UUID malformado, ou UUID que não está na tabela), gera
+   novo, insere a linha, e seta o cookie no `response`; (c) se válido,
+   atualiza `last_seen_at` (com `func.now()`, sem round-trip extra
+   quando combinada à query da watchlist). A dependency é idempotente
+   por request — endpoints só `Depends(ensure_session)` quando
+   precisam da session_uuid.
+
+3. **Tabela `watchlist_items`** (`id BIGSERIAL PK`, `session_uuid
+   UUID NOT NULL REFERENCES user_sessions(uuid) ON DELETE CASCADE`,
+   `asset_id BIGINT NOT NULL REFERENCES assets(id) ON DELETE CASCADE`,
+   `position INT NOT NULL DEFAULT 0`, `added_at TIMESTAMPTZ DEFAULT
+   now()`, `UNIQUE(session_uuid, asset_id)`, `INDEX(session_uuid)`).
+   `ON DELETE CASCADE` em ambos os FKs: se o asset for despromovido
+   (raríssimo) ou a session for purgada, items somem sem trabalho extra.
+
+4. **Endpoints idempotentes**:
+   - `GET /api/watchlist` → 200 + `{ items: [...] }` ordenado por
+     `position ASC, added_at ASC`. Lista vazia se ainda não há items
+     (não 404 — semântica "asset_id não encontrado" só faz sentido em
+     POST/DELETE de símbolo).
+   - `POST /api/watchlist/{symbol}` → 201 (criou) ou 200 (já existia,
+     idempotente). 404 se `symbol` não está na tabela `assets`. Body
+     opcional para `position`; default é "fim da lista" (max+1).
+   - `DELETE /api/watchlist/{symbol}` → 204 (removeu) ou 204 mesmo se
+     não existia (idempotente; o 404 só dispara se o `symbol` não
+     existe em `assets` — diferenciar "não-existe-no-universo" de
+     "não-está-na-watchlist"). Decisão: 404 só para asset desconhecido;
+     remoção de item ausente é 204.
+
+5. **Migration Alembic puramente aditiva**: nova revisão cria as duas
+   tabelas, sem tocar nas 9 existentes. Downgrade dropa as duas. Em
+   SQLite (testes), `gen_random_uuid()` não existe — UUID é gerado em
+   Python (`uuid.uuid4()`) no insert do middleware, não pelo banco.
+   Schema usa `String(36)` em SQLite e `UUID` em Postgres via
+   `with_variant`.
+
+6. **Endpoint complementar de portabilidade**:
+   `GET /api/watchlist/export.csv` (uma linha por item: `symbol, name,
+   position, added_at`) reusa a infra do ISSUE-017 e dá ao usuário
+   uma rota de backup manual. Mitiga o pior cenário do cookie-only:
+   limpeza acidental de cookies → perda da watchlist.
+   `POST /api/watchlist/import` aceita o mesmo CSV e popula a
+   watchlist atual (idempotente sobre `UNIQUE(session_uuid, asset_id)`).
+   **Adiada para issue ISSUE-018b** — fora do escopo do MVP, mas
+   documentada aqui para ancorar a decisão de cookie-only.
+
+7. **Rate limit dedicado**: `rate_limit_watchlist_write` (default
+   `30/minute/IP` — endpoint barato mas POST/DELETE em loop é vetor de
+   spam de inserções), `rate_limit_watchlist_read` (default `120/minute/IP`,
+   acima do default 60 porque dashboard pode poll). Settings novas em
+   `backend.config.settings`, documentadas em `.env.example`.
+
+**Alternativas consideradas:**
+
+- **(a) Cookie UUID anônimo (ESCOLHIDO)** — tempo de implementação ~4h
+  (alinhado com a estimativa do diagnóstico). Sem dependência de
+  serviço externo. Migrável (ver "Como aplicar" abaixo). Custo: cookie
+  é ligado ao browser/máquina; troca de device = nova session vazia.
+
+- **(b) M365 SSO via OAuth2/OIDC com biblioteca `msal` ou
+  `authlib`** — rejeitado para o MVP. Para fazer direito precisa:
+  app registration no Azure AD do tenant da empresa, redirect URI
+  configurado, gestão de `client_secret` (mais um item para `.env`),
+  endpoint `/auth/login` + `/auth/callback`, sessão server-side
+  (cookie de sessão com JWT ou referência), refresh token rotation,
+  middleware que injeta `user_id` em handlers protegidos. Dep nova
+  (`msal>=1.27` ou `authlib>=1.3`). Tempo realista: 8–16h, +
+  configuração no Azure AD (humano-only). **Quando reconsiderar**:
+  (i) >1 usuário simultâneo confirmado, (ii) requisito corporativo de
+  auditoria de "quem viu o quê", (iii) integração com permissão
+  granular (ex.: dashboards privados por papel). Nenhum dos três é
+  realidade hoje (Lucas é o usuário primário, sem co-pilots ativos).
+
+- **(c) Auth básico HTTP (`Authorization: Basic ...`)** — rejeitado.
+  Usuário/senha em cada request, dificulta integração com SPA, e exige
+  gestão de senhas que (depois de ISSUE-005) Lucas já indicou querer
+  evitar. Pior que cookie e pior que SSO em todos os eixos.
+
+- **(d) Token estático em header (`X-API-Key`)** — rejeitado para
+  watchlist. Faz sentido para integração machine-to-machine (ex.: um
+  job de Lucas que popula watchlist via curl), mas para a UI seria
+  pior UX que cookie (SPA precisaria gerenciar storage do token).
+  Pode coexistir no futuro como camada paralela à de cookie, dedicada
+  a uso programático.
+
+- **(e) localStorage no frontend, sem persistência server-side
+  (status quo do PoC `emergent/`)** — rejeitado. ISSUE-018 existe
+  exatamente para sair desse modelo: localStorage é per-browser, não
+  sobrevive a limpeza de cache e não é compartilhável entre devices
+  via export. O ADR assume que persistência server-side é o objetivo.
+
+**Trade-off:**
+
+- **Single-user-per-cookie é por design.** Lucas em duas máquinas =
+  duas watchlists. Mitigação: endpoint de export/import (item 6, em
+  issue separada). Aceitável para MVP; o dia que virar fricção é o
+  gatilho para SSO.
+
+- **Sem proteção CSRF dedicada.** `SameSite=Lax` é a única defesa.
+  Cobre o cenário de browser moderno (todos os majors aplicam Lax
+  default desde 2020). Threat model: como POST/DELETE da watchlist
+  só afeta dados próprios do usuário, o pior cenário de CSRF é
+  "atacante adiciona/remove tickers da watchlist do Lucas via
+  imagem-tag em página maliciosa que ele visite logado". Pequeno,
+  reversível, e bloqueado por `SameSite=Lax` na prática. Se um dia
+  o threat model mudar (auth real, transações de valor), adicionar
+  CSRF token dedicado é um middleware separado — cabe num run.
+
+- **`HttpOnly` + setting opcional `Secure=False` em dev.** Sem isso,
+  testes locais sobre `http://localhost:8000` não recebem o cookie em
+  navegadores que enforcem Secure. Padrão prod = `Secure=True`;
+  documentado em `.env.example` que `SESSION_COOKIE_SECURE=false` é
+  só para dev.
+
+- **Cookie de 10 anos parece eterno mas é o ponto.** Cookie de sessão
+  curto (24h) força recriação diária e perde watchlist em pausa de
+  fim-de-semana. 10 anos é "vida útil esperada do MVP" e
+  efetivamente "persistente até limpeza explícita".
+
+- **Caminho de migração para auth real é linear, não revolucionário.**
+  Quando SSO chegar: nova tabela `users (id, email, m365_oid,
+  linked_session_uuid)`. No primeiro callback OAuth, ler cookie
+  `mdp_session`, criar `user` linkando o uuid, e migrar a FK das
+  watchlist_items via `ALTER TABLE ... ADD COLUMN user_id` + UPDATE
+  por JOIN. O cookie continua existindo (degradação graciosa para
+  usuário não-logado), mas ganha `user_id` quando autenticado. Zero
+  perda de dados.
+
+- **Não rastreia IP nem user agent.** Decisão de privacidade
+  consciente — `user_sessions` carrega só `uuid + created_at +
+  last_seen_at`. Se um dia precisar (anti-fraude, debugging),
+  adicionar é aditivo. Default = mínimo.
+
+**Como aplicar (próximo run que pegar a issue):**
+
+- Implementar `backend/api/_session.py::ensure_session(request, response)`
+  como FastAPI dependency. Helper `get_session_uuid(request) ->
+  uuid.UUID | None` para handlers que precisam só ler.
+- Adicionar `backend/api/watchlist.py` com os 3 endpoints; registrar
+  em `backend/api/router.py`. Decorar com `@limiter.limit(
+  settings.rate_limit_watchlist_{read,write})`.
+- Schema: estender `backend/db/schema.py` com `UserSession` e
+  `WatchlistItem`; gerar revisão Alembic
+  (`alembic revision --autogenerate -m "add watchlist tables"`).
+  **Atenção:** revisar o autogenerate antes de comitar — verificar
+  que UUID é renderizado como `String(36)` em SQLite e `UUID` em
+  Postgres (usar `sa.Uuid()` da SQLAlchemy 2.0 que faz isso nativo,
+  não tipo Postgres-only).
+- Tests:
+  - `test_session_cookie.py` — cookie set no 1º request, idempotente
+    no 2º, não vazado pra outros endpoints sem `Depends(ensure_session)`,
+    `Secure` flag respeita setting.
+  - `test_watchlist_api.py` — caminho feliz (POST→GET→DELETE→GET),
+    idempotência (POST duplicado = 200, DELETE de inexistente = 204),
+    404 só pra asset desconhecido, isolamento entre cookies (criar 2
+    sessions, mexer em uma não afeta a outra).
+  - `test_watchlist_alembic.py` — upgrade head cria as 2 tabelas,
+    downgrade dropa, FK cascade testado em SQLite (cria session →
+    cria item → deleta session → item somem).
+  - Frontend: a watchlist UI (botão "estrelar" no card de asset)
+    fica para ISSUE-018b (continuação na frontend). O ADR cobre só
+    a infra de backend.
+
+**Critério de aceite ISSUE-018 (para o próximo run):**
+- Migração Alembic up/down sem warning.
+- 3 endpoints com testes verdes.
+- Cookie set/leitura testado.
+- `.env.example` documenta `SESSION_COOKIE_SECURE` e os 2 rate limits.
+- DECISIONS.md ganha "Run #N — ISSUE-018 implementada" referenciando
+  esta ADR.
+- ISSUE-018b (frontend wiring + export/import CSV da watchlist)
+  abertas como issues novas, fora do escopo desta entrega.
+
+---
+
 ## 2026-04-30 — Endpoint CSV: 4 escolhas de design
 **Issue:** ISSUE-017
 **Decisão:** Endpoint `GET /api/export/{symbol}.csv` desenhado com 4
