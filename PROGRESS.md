@@ -32,7 +32,7 @@ Ordem = prioridade de execução. Marcações:
 - [x] ISSUE-015 — Agendamento incremental — PR #11, 2026-04-30 (https://github.com/mullerdoskov/Global_Mkt/pull/11)
 - [x] ISSUE-016 — Adicionar ativos asiáticos (JP/AU/HK) — PR #12, 2026-04-30 (https://github.com/mullerdoskov/Global_Mkt/pull/12)
 - [x] ISSUE-017 — Endpoint `/api/export/{symbol}.csv` — PR #13, 2026-04-30 (https://github.com/mullerdoskov/Global_Mkt/pull/13)
-- [x] ISSUE-018 — Watchlist persistente (DB) — ADR em PR #14, implementação em PR #15
+- [x] ISSUE-018 — Watchlist persistente (DB) — ADR em PR #14 (https://github.com/mullerdoskov/Global_Mkt/pull/14), implementação em PR #15 (https://github.com/mullerdoskov/Global_Mkt/pull/15), 2026-04-30
 
 ## Sprint 3 — Opcional, sem prioridade
 
@@ -83,8 +83,9 @@ Ordem = prioridade de execução. Marcações:
   respeita Secure). Adicionado `SESSION_COOKIE_SECURE=false` em
   `conftest.py` antes de qualquer import de backend; `.env.example`
   documenta que dev local sobre HTTP precisa do mesmo override.
-  PR aberto sobre branch da PR #14 (stack) — auto-retarget para
-  `main` quando PRs anteriores mergearem.
+  PR #15 aberto sobre branch da PR #14 (stack):
+  https://github.com/mullerdoskov/Global_Mkt/pull/15 — auto-retarget
+  para `main` quando PRs anteriores mergearem.
 
 - 2026-04-30 — Run #14: ADR de ISSUE-018 registrado (sem implementação).
   A orientação do run anterior pediu ADR formal antes de pegar
