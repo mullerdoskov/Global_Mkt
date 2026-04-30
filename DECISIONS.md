@@ -464,3 +464,64 @@ import:
 **Decisão:** O pré-requisito de inicializar git em `market_platform_unified/` e conectar ao `mullerdoskov/Global_Mkt` não estava concluído quando a Routine rodou pela primeira vez. A Routine inicializou o repositório neste run, conectou ao remote existente, e abriu o PR #1. O histórico do nested `Global_Mkt_2.0/` (2 commits) não foi incorporado — a Routine não pode fazer força push nem rebase sem autorização humana. Lucas deve resolver o histórico em conjunto com ISSUE-001.
 **Alternativas consideradas:** abrir somente uma GitHub Issue descrevendo o bloqueio (sem código).
 **Trade-off:** ao escolher inicializar o git e abrir o PR, a Routine entregou código funcional mas criou uma divergência de histórico entre o nested e o novo repositório — situação que ISSUE-001 precisa resolver.
+
+---
+
+## 2026-04-30 — Agendamento via Task Scheduler local + wrapper .ps1; lógica em módulo Python
+**Issue:** ISSUE-015
+**Decisão:** Três peças acopladas:
+1. **`backend.scheduling.incremental_update`** — módulo Python que envolve
+   `update_prices` com logging per-run, exit codes diferenciados
+   (`0`/`1`/`2`) e nome de log estável (`incremental_update_<UTC>.log`).
+   É o ponto de entrada testável; toda a lógica fica aqui.
+2. **`scripts/scheduled_update.{ps1,sh}`** — dois wrappers shell finos.
+   Resolvem o root do projeto (a partir do path do próprio script),
+   ativam venv se houver, carregam `.env`, e delegam ao módulo Python.
+   Sem lógica de negócio — qualquer mudança de comportamento mexe no
+   Python, não nos wrappers.
+3. **`scripts/Register-ScheduledTask.ps1`** — helper idempotente que
+   registra o job no Windows Task Scheduler com trigger diário às 22:00
+   hora local da máquina, `StartWhenAvailable=true` (acorda do sleep) e
+   `ExecutionTimeLimit=2h`.
+**Alternativas consideradas:**
+- (B) Cron na máquina Lucas-only: viável em WSL, mas o estado padrão da
+  estação é Windows e o cron WSL exige WSL rodando em background. Mais
+  setup, mais frágil.
+- (C) Prefect / Dagster (orquestrador full): adiciona ~1 servidor a mais
+  para operar (Prefect Cloud agente, ou self-hosted server + worker),
+  observabilidade e UI vêm de graça mas custam complexidade que ainda
+  não compensa para 1 job em 1 máquina. O módulo Python já é
+  empacotável como flow/job se um dia migrar — basta envolver
+  `run_incremental_update` num `@flow` decorator.
+- (D) GitHub Actions cron: o runner não tem acesso ao Postgres local nem
+  ao filesystem do Lucas. Inviável sem expor o banco ou colocar
+  Postgres em cloud (mudança maior de infra, fora do escopo).
+- (E) APScheduler dentro do FastAPI: requer manter a API rodando 24/7 só
+  para o agendador — acopla disponibilidade do scheduler à do servidor
+  HTTP, e perde o scheduler se o uvicorn cair. Anti-padrão.
+**Trade-off:**
+- "22:00 BRT" é responsabilidade do operador: o Task Scheduler nativo
+  não tem suporte direto a fuso, dispara em hora local da máquina.
+  Documentado no BACKEND_README — máquina precisa estar em
+  `America/Sao_Paulo`. Em servidor UTC, ajustar `-At` para `01:00`.
+- O run não é cluster-aware: se Lucas tiver mais de uma máquina rodando
+  o job, ambos disparam. Aceitável — `update_prices` é idempotente
+  (UPSERT por (asset_id, date)), e a probabilidade de overlap é baixa.
+- Exit code `2` é uma convenção interna; nenhum monitor externo reage
+  a ele ainda. Logs por run são a única observabilidade — quem operar
+  precisa olhar `logs/scheduler/`.
+- Quando ISSUE-009 entrou em vigor, agendamentos passariam a precisar
+  `alembic upgrade head` antes de cada run? **Não.** O `update_prices`
+  só faz INSERT/UPSERT em tabelas existentes; mudanças de schema não
+  são iniciadas pelo job. Migrações ficam no fluxo de deploy/release,
+  não no agendamento de ingestão.
+**Como aplicar:**
+- Para rodar manualmente:
+  `python -m backend.scheduling.incremental_update [-d 5] [--log-dir DIR]`.
+- Para agendar no Windows: `cd scripts && .\Register-ScheduledTask.ps1`
+  (idempotente; reaplica config se já existir).
+- Para mudar a hora ou o lookback: re-rode `Register-ScheduledTask.ps1`
+  com `-At` e `-Days` — o script desregistra e recria.
+- Para um dia migrar para orquestrador: o módulo Python já é o ponto
+  de entrada; envolver `run_incremental_update` num `@flow` (Prefect)
+  ou `@op` (Dagster) é trivial.

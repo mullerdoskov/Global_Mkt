@@ -29,7 +29,7 @@ Ordem = prioridade de execução. Marcações:
 
 ## Sprint 2 — Continuidade do briefing
 
-- [ ] ISSUE-015 — Agendamento incremental
+- [x] ISSUE-015 — Agendamento incremental — PR #11, 2026-04-30 (https://github.com/mullerdoskov/Global_Mkt/pull/11)
 - [ ] ISSUE-016 — Adicionar ativos asiáticos (JP/AU/HK)
 - [ ] ISSUE-017 — Endpoint `/api/export/{symbol}.csv`
 - [ ] ISSUE-018 — Watchlist persistente (DB)
@@ -40,6 +40,41 @@ Ordem = prioridade de execução. Marcações:
 - [ ] ISSUE-020 — WebSocket de preços real-time
 
 ## Histórico
+
+- 2026-04-30 — Run #11: ISSUE-015 resolvida.
+  Atualização incremental agendada agora roda via `backend.scheduling.incremental_update`
+  (módulo Python testável) chamado por dois wrappers shell:
+  `scripts/scheduled_update.ps1` (Windows Task Scheduler) e
+  `scripts/scheduled_update.sh` (cron / WSL). Os wrappers só fazem
+  environment setup (resolvem root, ativam venv se existir, carregam
+  `.env`) e delegam — toda a lógica fica no Python.
+  Contrato de exit code definido para que o agendador trate cada caso
+  com prioridade certa: `0` = OK, `2` = run completou com erros parciais
+  (ex.: 1 de 600 tickers com 429 esporádico — não acende o alarme),
+  `1` = falha não recuperada (ação humana). Logs por run em
+  `logs/scheduler/incremental_update_YYYY-MM-DDTHHMMSSZ.log` (timestamp
+  UTC para evitar ambiguidade de fuso). Destino sobrescrevível via env
+  `SCHEDULER_LOG_DIR` ou flag `--log-dir`.
+  Helper `scripts/Register-ScheduledTask.ps1` registra o job no Windows
+  Task Scheduler de forma idempotente (Unregister-then-Register), com
+  trigger diário às 22:00 hora local da máquina, `StartWhenAvailable`
+  (acorda do sleep) e `ExecutionTimeLimit=2h` (mata runs enroscados).
+  Decisão: Task Scheduler local + .ps1 escolhido sobre Prefect/Dagster
+  por ser proporcional ao escopo atual (1 job, 1 máquina) — registrada
+  em DECISIONS.md.
+  Tests: `tests/test_scheduler.py` adiciona 26 testes — 4 sobre exit
+  codes (0/1/2 + caso vacuo 0/0), 3 sobre lookback_days plumbing, 3
+  parametrizados sobre input inválido, 4 sobre logging (naming,
+  traceback capturado, mkdir recursivo, format do path), 3 sobre
+  resolução de log dir (default/env/override), 2 sobre `main()`/argparse,
+  e 7 static checks sobre os shell wrappers (existem, delegam ao módulo
+  Python sem duplicar lógica, `.sh` passa em `bash -n` quando disponível,
+  Register-ScheduledTask configura trigger diário 22:00 e é idempotente).
+  Total: 173/173 passando + 1 skip (mesma pré-existente). Sem dependência
+  de internet, banco real ou Windows API — `update_prices` é injetado
+  como fake; static checks sobre os scripts são read-only.
+  PR aberto sobre branch da PR #10 (stack) — auto-retarget para `main`
+  quando PRs anteriores mergearem.
 
 - 2026-04-30 — Run #10: ISSUE-014 resolvida.
   Três módulos deixam de fazer trabalho em escopo de import:
