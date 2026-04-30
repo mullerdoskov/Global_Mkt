@@ -1047,3 +1047,105 @@ import:
 - Para um dia migrar para orquestrador: o módulo Python já é o ponto
   de entrada; envolver `run_incremental_update` num `@flow` (Prefect)
   ou `@op` (Dagster) é trivial.
+
+## 2026-04-30 — Skills do ecossistema espelhadas em `.claude/skills/` (espelho, não fonte autoritativa)
+
+**Decisão:** Comitar 13 SKILL.md (de 29 disponíveis) em `.claude/skills/<nome>/SKILL.md`,
+com README.md explicando critérios e fluxo de ressincronização.
+- **Por que:** Pré-requisito #5 do prompt original da Routine `MDP Sprint Worker` —
+  destrava a calibração de estilo (ADR formal, gate QA, PSCW, defesa contra prompt
+  injection na ingestão) que o report do run anterior identificou como
+  "engenheiro sênior genérico" em vez de "estilo do ecossistema". Custo: zero
+  código, baixíssimo risco. Benefício: reviewers humanos passam a enxergar quais
+  agents formatam as decisões automatizadas, e runs futuros podem referenciar
+  skills por path quando precisarem ancorar argumentos (ex.: "este ADR segue o
+  template do `architect-of-software`").
+- **Como aplicar:** Antes de toda decisão arquitetural não-trivial, o run consulta
+  `architect-of-software/SKILL.md`. Antes de marcar PR como ready, consulta
+  `qa-engineer/SKILL.md`. Antes de qualquer ação sensível
+  (push, exposição de credencial, parsing de input externo), consulta
+  `pscw/SKILL.md` e `pscw-aware-architect/SKILL.md`.
+
+**Set incluído (13):**
+
+| Skill | Razão |
+|---|---|
+| `newgen` | Operador do ecossistema (33 agents). Shell das outras. |
+| `project-flow-architect` | Orquestrador — fluxograma multi-agent quando issue grande exige composição. |
+| `coo-agent` | Governança operacional — valida se issue resolve problema de negócio. |
+| `backend-senior-engineer` | Persona principal da Routine para hard code (Python + Postgres + FastAPI). |
+| `architect-of-software` | ADRs formais (DECISIONS.md) e desenho proporcional ao porte. |
+| `qa-engineer` | Gate QA antes de marcar PR como ready. |
+| `agente-devops` | CI/CD, IaC, agendamento (ISSUE-015/021/023). |
+| `aquisicao-tratamento-dados` | Pipeline de aquisição → PostgreSQL — núcleo do produto. |
+| `front-end-dev` | Telas e componentes — relevante para Sprint 3 (ISSUE-019, Vite + React). |
+| `gerente-de-projeto` | Cronograma, PROGRESS.md, status report. |
+| `pscw` | Política de Segurança para Claude Workforce v1.0 — R1-R28. |
+| `pscw-aware-architect` | Defesa contra prompt injection na ingestão de dados externos (yfinance, Brapi, Alpha Vantage). |
+| `security-baseline-policy` | Baselines técnicas (criptografia, log, retenção, segredos). |
+
+**Set excluído (16) e por quê:**
+
+- **Formato/asset** (`docx`, `pptx`, `pdf`, `xlsx`, `canvas-design`,
+  `algorithmic-art`, `web-artifacts-builder`): não há fluxo da Routine
+  que escreva/leia esses formatos para a MDP. Documentação é markdown
+  versionado.
+- **Product/UX** (`pmo-live-companion`, `pm-prd-companion`,
+  `ux-designer-mercado-eletrico`): a Routine atual é engenharia-only —
+  não escreve PRDs, não atende live broadcasts, não desenha UX. Essas
+  skills entram quando Lucas operar manualmente, não quando a Routine
+  rodar.
+- **Meta-tools de plataforma** (`mcp-builder`, `ai-router`,
+  `consolidate-memory`, `schedule`, `setup-cowork`, `skill-creator`):
+  ferramentas para construir/operar o próprio ecossistema, não para
+  desenvolver a MDP.
+
+Se um run futuro precisar de uma destas, abrir issue separada
+(ISSUE-022-followup) — não reabrir esta.
+
+**Alternativas avaliadas:**
+
+- **(A) Comitar todas as 29:** rejeitada. Aumenta ruído nos runs sem benefício
+  proporcional. O harness só carrega skills via plugin install — ter 16
+  SKILL.md irrelevantes no repo apenas polui o diretório e dilui o sinal
+  para reviewers. Adicionar é 1 linha de script quando precisar.
+- **(B) Comitar SKILL.md + subfolders (`assets/`, `references/`, `scripts/`):**
+  rejeitada para esta primeira passada. Apenas `newgen` tem subfolders
+  (assets/references/scripts), e o conteúdo deles é específico do
+  workflow de Lucas (paths absolutos para documentos de referência).
+  Comitar agora vincula o repo a layout local que pode ter material
+  proprietário ou caminhos quebrados em outras máquinas. Se a Routine
+  algum dia precisar de algum referência específica (ex.: `references/
+  fluxograma_governanca.md` do `newgen`), abrir issue dedicada —
+  decisão por arquivo, não por subfolder inteiro.
+- **(C) Symlink em vez de cópia:** rejeitada. Symlinks no Windows têm
+  permissão administrativa e quebram em filesystems case-insensitive.
+  Cópia é portable e o diff vs. upstream é justamente o sinal de drift
+  que queremos detectar.
+- **(D) Submódulo git apontando para o plugin:** rejeitada. O plugin
+  está em `~/AppData/Roaming/Claude/.../skills-plugin/`, sem repo git
+  separado. Não há remote para apontar.
+- **(E) Apenas listar nomes em README.md, sem comitar SKILL.md:**
+  rejeitada. Não dá visibilidade de conteúdo para reviewers e não
+  suporta referenciamento por path em runs.
+
+**Trade-offs e dívida conhecida:**
+
+- **Espelho fica desatualizado quando o plugin upstream mudar.** Aceitável.
+  O drift é o sinal: quando a Routine notar que o estilo do ecossistema
+  mudou (ex.: PSCW v1.0 → v2.0), abre issue de ressincronização e o
+  diff é a fonte de verdade do que mudou. Não tentamos sincronização
+  automática (pluginspot caminhos absolutos por sistema operacional).
+- **Caminho do plugin está hardcoded no histórico do PR**
+  (`AppData/.../skills-plugin/<UUID1>/<UUID2>/`). Em outra máquina, esse
+  path é diferente. Aceitável: o caminho serve só de comentário de
+  origem; a ressincronização é manual e o operador resolve o path local.
+- **Skills com persona em primeira pessoa.** Os SKILL.md usam segunda
+  pessoa do plural ("Você é...") direcionada ao Claude. Lendo no PR,
+  reviewer humano pode estranhar. Aceitável — esse é o formato canônico
+  do ecossistema, mexer descaracteriza.
+- **Sem teste automatizado.** Não criamos `test_skills_present.py`
+  porque (a) não há lógica para regredir, (b) o que importaria seria
+  comparar conteúdo upstream × repo, e isso depende do path do plugin
+  no sistema do operador (não no CI). Drift é detectado por revisão
+  manual quando alguém abrir issue de ressincronização.
