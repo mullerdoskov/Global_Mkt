@@ -20,6 +20,12 @@ os.environ.setdefault("RATE_LIMIT_ENABLED", "false")
 # Os testes específicos de cache (`test_cache.py`) re-inicializam localmente.
 os.environ.setdefault("CACHE_ENABLED", "false")
 
+# Session cookie (ISSUE-018): TestClient conversa via http://testserver. Cookies
+# com `Secure=True` não são enviados por httpx sobre HTTP — para a watchlist
+# exercitar o ciclo cookie → request, o flag precisa ficar off em testes. Em
+# produção (HTTPS) o default `True` em settings continua valendo.
+os.environ.setdefault("SESSION_COOKIE_SECURE", "false")
+
 
 @pytest.fixture(autouse=True, scope="session")
 def _init_cache_for_tests():

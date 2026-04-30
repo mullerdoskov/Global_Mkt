@@ -33,6 +33,9 @@ EXPECTED_TABLES = {
     "financial_statements",
     "valuation_multiples",
     "ingestion_log",
+    # ISSUE-018
+    "user_sessions",
+    "watchlist_items",
 }
 
 

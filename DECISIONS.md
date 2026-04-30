@@ -5,6 +5,58 @@ Formato: data — título, issue de referência, decisão, alternativas, trade-o
 
 ---
 
+## 2026-04-30 — ISSUE-018 implementação: 2 ajustes contra o ADR original
+**Issue:** ISSUE-018 (implementação)
+**Decisão:** A implementação seguiu o ADR de 2026-04-30 com 2 ajustes
+operacionais descobertos durante codificação:
+
+1. **`WatchlistItem.id` é `Integer`, não `BigInteger`.** O autogenerate
+   do Alembic propôs `BigInteger` (espelhando a ergonomia de
+   `prices_daily.id`). SQLite só auto-incrementa quando o tipo da PK é
+   exatamente `INTEGER PRIMARY KEY` (rowid alias) — `BIGINT PRIMARY KEY`
+   não tem essa propriedade, então o INSERT falha com
+   `NOT NULL constraint failed: watchlist_items.id`. Watchlist é
+   per-user, então `Integer` (range ~2.1 bi) é folga sobrada — não
+   há cenário em que um usuário acumule 2 bi de items numa só
+   watchlist. Corrigido em `schema.py` + migration antes de comitar.
+
+2. **`SESSION_COOKIE_SECURE=false` em testes.** O TestClient do FastAPI
+   conversa via `http://testserver`. Cookies com `Secure=True` não
+   são enviados de volta por httpx sobre HTTP — comportamento correto
+   por especificação, mas quebra o ciclo cookie→request quando o
+   default da settings é `True`. Solução: `conftest.py` seta
+   `SESSION_COOKIE_SECURE=false` antes de qualquer import de backend,
+   pareando com `RATE_LIMIT_ENABLED=false` e `CACHE_ENABLED=false`.
+   `.env.example` documenta que dev local sobre `http://localhost:8000`
+   precisa do mesmo override (em prod sobre HTTPS, manter `True`).
+
+**Resto da implementação alinha 1:1 com o ADR**: 3 endpoints
+idempotentes, `ensure_session` como dependency, store global no
+frontend (`watchlistStore` + `useWatchlist` hook), `WatchlistStar`
+reusável, página `/watchlist` no sidebar.
+
+**Trade-off:**
+- **`Integer` em vez de `BigInteger`**: alinha com SQLite mas diverge
+  de `prices_daily.id` (que é `BigInteger` e funciona em Postgres
+  porque BIGSERIAL existe nativo). Aceitável — watchlist nunca vai
+  ter o volume de prices_daily; a divergência é local à tabela.
+- **`SESSION_COOKIE_SECURE=false` em conftest**: vaza para todos os
+  testes (não só os de watchlist). Sem impacto operacional — testes
+  não exercitam HTTPS, e o cookie só importa para watchlist. O
+  contrato em prod (Secure=True) está intacto.
+
+**Como aplicar (verificação rápida em produção):**
+- `alembic upgrade head` aplica a migration aditiva sem mexer nas 9
+  tabelas existentes.
+- `.env` precisa ter `SESSION_COOKIE_SECURE=true` (já é default em
+  settings, mas explicitar em `.env` evita surpresas).
+- Smoke test manual: `curl -c cookie.txt http://host/api/watchlist`
+  → `{"items":[]}`; `curl -b cookie.txt -X POST .../watchlist/AAPL`
+  → `{"symbol":"AAPL","in_watchlist":true,"position":0}`; repetir
+  GET para confirmar persistência.
+
+---
+
 ## 2026-04-30 — Watchlist persistente: identidade via cookie UUID anônimo (MVP), com porta de migração para SSO
 **Issue:** ISSUE-018 (ADR pré-implementação — implementação pendente em run futuro)
 **Decisão:** A watchlist persistente usa um identificador opaco de sessão

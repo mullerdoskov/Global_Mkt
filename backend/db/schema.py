@@ -1,13 +1,16 @@
 """
 db/schema.py
-9 tabelas ORM — DDL completo com índices, constraints e relacionamentos.
+11 tabelas ORM — DDL completo com índices, constraints e relacionamentos.
 Criação idempotente (CREATE IF NOT EXISTS).
+
+ISSUE-018: tabelas user_sessions + watchlist_items para watchlist persistente
+via cookie UUID anônimo (ver DECISIONS.md, ADR de 2026-04-30).
 """
 
 from sqlalchemy import (
     Column, Integer, BigInteger, String, Float, Date, DateTime, Boolean,
     Text, Numeric, ForeignKey, UniqueConstraint, Index, Enum as SAEnum,
-    func
+    Uuid, func
 )
 from sqlalchemy.orm import DeclarativeBase, relationship
 import enum
@@ -311,9 +314,79 @@ class IngestionLog(Base):
 
 
 # ──────────────────────────────────────────────
+# 10. USER_SESSIONS (Sessões anônimas via cookie — ISSUE-018)
+# ──────────────────────────────────────────────
+class UserSession(Base):
+    """Sessão anônima identificada por UUID v4 em cookie HTTP.
+
+    Sem PII. Sem auth. Quando ISSUE de SSO M365 for retomada, esta tabela
+    ganha relacionamento opcional com tabela `users` via coluna
+    `linked_user_id` (ALTER aditiva, sem perda de dados).
+    """
+    __tablename__ = "user_sessions"
+
+    uuid = Column(Uuid(as_uuid=True), primary_key=True)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    last_seen_at = Column(DateTime, server_default=func.now(), nullable=False)
+
+    watchlist_items = relationship(
+        "WatchlistItem",
+        back_populates="session",
+        cascade="all, delete-orphan",
+    )
+
+    def __repr__(self):
+        return f"<UserSession {self.uuid}>"
+
+
+# ──────────────────────────────────────────────
+# 11. WATCHLIST_ITEMS (Watchlist persistente — ISSUE-018)
+# ──────────────────────────────────────────────
+class WatchlistItem(Base):
+    """Um asset numa watchlist de uma sessão.
+
+    `position` é a ordem desejada na UI (ASC). `UNIQUE(session_uuid, asset_id)`
+    garante idempotência do POST. CASCADE em ambos FKs mantém a tabela
+    limpa: se a sessão sumir ou o asset for despromovido, items somem
+    sem trabalho extra.
+    """
+    __tablename__ = "watchlist_items"
+
+    # SQLite só auto-incrementa "INTEGER PRIMARY KEY" (rowid alias). BigInteger
+    # vira BIGINT que não tem essa propriedade, então usamos Integer.
+    # Watchlist é per-user, então Integer dá folga sobrada.
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    session_uuid = Column(
+        Uuid(as_uuid=True),
+        ForeignKey("user_sessions.uuid", ondelete="CASCADE"),
+        nullable=False,
+    )
+    asset_id = Column(
+        Integer,
+        ForeignKey("assets.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    position = Column(Integer, nullable=False, default=0)
+    added_at = Column(DateTime, server_default=func.now(), nullable=False)
+
+    session = relationship("UserSession", back_populates="watchlist_items")
+    asset = relationship("Asset")
+
+    __table_args__ = (
+        UniqueConstraint("session_uuid", "asset_id",
+                         name="uq_watchlist_session_asset"),
+        Index("ix_watchlist_items_session_uuid", "session_uuid"),
+        Index("ix_watchlist_items_asset_id", "asset_id"),
+    )
+
+    def __repr__(self):
+        return f"<WatchlistItem session={self.session_uuid} asset={self.asset_id}>"
+
+
+# ──────────────────────────────────────────────
 # SETUP — Cria todas as tabelas
 # ──────────────────────────────────────────────
 def create_all_tables(engine):
     """Cria todas as tabelas no banco (idempotente)."""
     Base.metadata.create_all(engine)
-    print("✅ Todas as 9 tabelas criadas/verificadas com sucesso.")
+    print("✅ Todas as 11 tabelas criadas/verificadas com sucesso.")

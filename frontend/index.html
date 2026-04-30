@@ -84,6 +84,12 @@
             ChevronRight: (p) => <Icon {...p} d="M9 18l6-6-6-6" />,
             ArrowLeft: (p) => <Icon {...p} d="M19 12H5M12 19l-7-7 7-7" />,
             Database: (p) => <Icon {...p} d="M12 2C6.48 2 2 4.02 2 6.5v11C2 19.98 6.48 22 12 22s10-2.02 10-4.5v-11C22 4.02 17.52 2 12 2z" />,
+            Star: (p) => <Icon {...p} d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />,
+            StarFilled: ({ size = 20, className = '' }) => (
+                <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className}>
+                    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                </svg>
+            ),
         };
 
         // ============================================
@@ -209,10 +215,83 @@
         // ============================================
         // FETCH HELPER
         // ============================================
-        const apiFetch = async (path) => {
-            const r = await fetch(`${API_BASE}${path}`);
+        const apiFetch = async (path, opts = {}) => {
+            const r = await fetch(`${API_BASE}${path}`, {
+                credentials: 'include',  // ISSUE-018: envia cookie de sessão
+                ...opts,
+            });
             if (!r.ok) throw new Error(`${r.status}`);
+            // 204 No Content (DELETE) — não tem body
+            if (r.status === 204) return null;
             return r.json();
+        };
+
+        // ============================================
+        // WATCHLIST (ISSUE-018) — store global em estado React via hook simples
+        // ============================================
+        // Usamos um pequeno store em janela para que toggle no SymbolDetail e
+        // a página /watchlist compartilhem o mesmo set de símbolos sem ping
+        // duplicado ao backend.
+        const watchlistStore = {
+            symbols: new Set(),
+            listeners: new Set(),
+            loaded: false,
+            async load() {
+                try {
+                    const data = await apiFetch('/watchlist');
+                    this.symbols = new Set((data.items || []).map(i => i.symbol));
+                    this.loaded = true;
+                    this.notify();
+                } catch {}
+            },
+            async add(symbol) {
+                try {
+                    await apiFetch(`/watchlist/${encodeURIComponent(symbol)}`, { method: 'POST' });
+                    this.symbols.add(symbol);
+                    this.notify();
+                } catch {}
+            },
+            async remove(symbol) {
+                try {
+                    await apiFetch(`/watchlist/${encodeURIComponent(symbol)}`, { method: 'DELETE' });
+                    this.symbols.delete(symbol);
+                    this.notify();
+                } catch {}
+            },
+            has(symbol) { return this.symbols.has(symbol); },
+            subscribe(fn) { this.listeners.add(fn); return () => this.listeners.delete(fn); },
+            notify() { this.listeners.forEach(fn => fn()); },
+        };
+
+        // Hook React para componentes que querem reagir ao estado da watchlist.
+        const useWatchlist = () => {
+            const [, setTick] = useState(0);
+            useEffect(() => {
+                if (!watchlistStore.loaded) watchlistStore.load();
+                return watchlistStore.subscribe(() => setTick(t => t + 1));
+            }, []);
+            return {
+                has: (s) => watchlistStore.has(s),
+                add: (s) => watchlistStore.add(s),
+                remove: (s) => watchlistStore.remove(s),
+                toggle: (s) => watchlistStore.has(s) ? watchlistStore.remove(s) : watchlistStore.add(s),
+                symbols: watchlistStore.symbols,
+            };
+        };
+
+        // Botão estrelar reutilizável.
+        const WatchlistStar = ({ symbol, size = 18 }) => {
+            const wl = useWatchlist();
+            const active = wl.has(symbol);
+            return (
+                <button
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); wl.toggle(symbol); }}
+                    className={`transition-colors ${active ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+                    title={active ? 'Remover da watchlist' : 'Adicionar à watchlist'}
+                >
+                    {active ? <Icons.StarFilled size={size} /> : <Icons.Star size={size} />}
+                </button>
+            );
         };
 
         // ============================================
@@ -415,9 +494,12 @@
                     </a>
 
                     <div className="flex items-start justify-between">
-                        <div>
-                            <h1 className="font-heading text-3xl font-bold">{details.symbol}</h1>
-                            <p className="text-muted-foreground text-sm">{details.name}</p>
+                        <div className="flex items-center gap-3">
+                            <div>
+                                <h1 className="font-heading text-3xl font-bold">{details.symbol}</h1>
+                                <p className="text-muted-foreground text-sm">{details.name}</p>
+                            </div>
+                            <WatchlistStar symbol={symbol} size={22} />
                         </div>
                         <span className="text-xs bg-muted px-2 py-1 rounded text-muted-foreground">{details.asset_type || details.type}</span>
                     </div>
@@ -672,11 +754,70 @@
         };
 
         // ============================================
+        // PÁGINA: WATCHLIST (ISSUE-018)
+        // ============================================
+        const WatchlistPage = () => {
+            const [items, setItems] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const wl = useWatchlist();
+
+            const reload = useCallback(() => {
+                apiFetch('/watchlist')
+                    .then(d => { setItems(d.items || []); setLoading(false); })
+                    .catch(() => { setItems([]); setLoading(false); });
+            }, []);
+
+            useEffect(() => { reload(); }, [reload]);
+            // Recarrega quando o store global mudar (ex.: remoção via estrela)
+            useEffect(() => reload(), [wl.symbols.size]);
+
+            if (loading) return <Loading />;
+
+            return (
+                <div className="space-y-6">
+                    <div>
+                        <h1 className="font-heading text-3xl font-bold">Watchlist</h1>
+                        <p className="text-muted-foreground text-sm mt-1">
+                            {items.length} {items.length === 1 ? 'ativo acompanhado' : 'ativos acompanhados'}
+                        </p>
+                    </div>
+
+                    {items.length === 0 ? (
+                        <Empty
+                            title="Watchlist vazia"
+                            desc="Adicione ativos clicando na estrela ao abrir o detalhe de um ativo."
+                        />
+                    ) : (
+                        <Card className="p-0">
+                            <Table
+                                columns={[
+                                    { key: 'symbol', label: 'Símbolo' },
+                                    { key: 'name', label: 'Nome' },
+                                    { key: 'asset_type', label: 'Tipo' },
+                                    { key: 'currency', label: 'Moeda' },
+                                    { key: 'actions', label: '' },
+                                ]}
+                                data={items.map(it => ({
+                                    symbol: <a href={`#/symbol/${it.symbol}`} className="font-heading font-bold text-primary hover:underline">{it.symbol}</a>,
+                                    name: <span className="text-sm">{it.name}</span>,
+                                    asset_type: <span className="text-xs bg-muted px-2 py-0.5 rounded text-muted-foreground">{it.asset_type}</span>,
+                                    currency: <span className="font-mono text-xs">{it.currency || '--'}</span>,
+                                    actions: <WatchlistStar symbol={it.symbol} size={16} />,
+                                }))}
+                            />
+                        </Card>
+                    )}
+                </div>
+            );
+        };
+
+        // ============================================
         // SIDEBAR & LAYOUT
         // ============================================
         const Sidebar = ({ page, mobileOpen, closeMobile }) => {
             const items = [
                 { id: '/', label: 'Dashboard', icon: Icons.Home },
+                { id: '/watchlist', label: 'Watchlist', icon: Icons.Star },
                 { id: '/sectors', label: 'Setores', icon: Icons.Briefcase },
                 { id: '/ingestion', label: 'Ingestão', icon: Icons.Activity },
             ];
@@ -722,6 +863,7 @@
             let content;
             if (page === '/' || page === '') content = <Dashboard />;
             else if (symbolMatch) content = <SymbolDetail symbol={symbolMatch[1]} />;
+            else if (page === '/watchlist') content = <WatchlistPage />;
             else if (page === '/sectors') content = <SectorsPage />;
             else if (page === '/ingestion') content = <IngestionPage />;
             else content = <Dashboard />;
