@@ -4,8 +4,11 @@ FastAPI app principal do market_platform_unified backend.
 """
 
 from contextlib import asynccontextmanager
+from pathlib import Path
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.responses import JSONResponse
 
@@ -15,6 +18,10 @@ from backend.db.connection import test_connection, engine
 from backend.db.schema import create_all_tables
 from backend.api.router import api_router
 from backend.api.models import HealthResponse
+
+# Diretório com o SPA estático (frontend/index.html). Resolvido a partir de
+# backend/app.py para não depender do CWD em que uvicorn for invocado.
+FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 
 # Setup logging
 logger = setup_logging()
@@ -77,9 +84,10 @@ app = FastAPI(
 # CORS MIDDLEWARE
 # ══════════════════════════════════════════════
 
-# Parse CORS origins — aceita file:// (origin "null") para dev local
-cors_origins = [o.strip() for o in settings.cors_origins.split(",")]
-cors_origins.append("null")  # file:// envia origin "null"
+# Parse CORS origins. ISSUE-007: a origem "null" (que o navegador envia para
+# arquivos abertos via file://) deixa de ser injetada — o frontend agora é
+# servido pelo próprio backend via StaticFiles, mesmo origin que a API.
+cors_origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
 if "*" in cors_origins:
     cors_origins = ["*"]
 
@@ -141,6 +149,21 @@ def health_check() -> HealthResponse:
     )
 
 
+# Endpoint de "info" da API. ISSUE-007: movido de "/" para "{api_prefix}/info"
+# porque "/" passa a servir o SPA estático (frontend/index.html). O conteúdo
+# (nome/versão/descrição) é preservado para qualquer consumidor externo.
+@app.get(f"{settings.api_prefix}/info", tags=["root"])
+def api_info():
+    """Informações sobre a API."""
+    return {
+        "name": "Market Platform Unified",
+        "version": "1.0.0",
+        "description": "API unificada de dados financeiros",
+        "docs": "/docs",
+        "api_prefix": settings.api_prefix,
+    }
+
+
 # Inclui routers da API
 app.include_router(
     api_router,
@@ -149,21 +172,26 @@ app.include_router(
 
 
 # ══════════════════════════════════════════════
-# ROOT
+# FRONTEND ESTÁTICO (ISSUE-007)
 # ══════════════════════════════════════════════
+#
+# Mount registrado por último: rotas explícitas (/health, /docs, /openapi.json,
+# /redoc, /api/*) já foram resolvidas pelo Starlette antes de a requisição cair
+# aqui. Caminhos não cobertos são servidos a partir de frontend/, com html=True
+# fazendo `/` retornar `frontend/index.html`.
 
-@app.get("/", tags=["root"])
-def root():
-    """
-    Informações sobre a API.
-    """
-    return {
-        "name": "Market Platform Unified",
-        "version": "1.0.0",
-        "description": "API unificada de dados financeiros",
-        "docs": "/docs",
-        "api_prefix": settings.api_prefix,
-    }
+if FRONTEND_DIR.is_dir():
+    app.mount(
+        "/",
+        StaticFiles(directory=FRONTEND_DIR, html=True),
+        name="frontend",
+    )
+    logger.info(f"✅ Frontend estático montado em / a partir de {FRONTEND_DIR}")
+else:
+    logger.warning(
+        f"⚠️  Diretório de frontend não encontrado em {FRONTEND_DIR}; "
+        "rota / não disponível"
+    )
 
 
 # ══════════════════════════════════════════════

@@ -15,7 +15,7 @@ Ordem = prioridade de execução. Marcações:
 - [x] ISSUE-004 — Remover senha hardcoded em `connection.py:16` e `settings.py:13` — PR #2, 2026-04-29 (https://github.com/mullerdoskov/Global_Mkt/pull/2)
 - [humano-only] ISSUE-005 — Auditar git history por senha (filter-repo é destrutivo)
 - [x] ISSUE-006 — Smoke tests da API (cobertura completa, 1 teste por endpoint) — PR #3, 2026-04-29 (https://github.com/mullerdoskov/Global_Mkt/pull/3)
-- [ ] ISSUE-007 — Servir frontend via FastAPI StaticFiles
+- [x] ISSUE-007 — Servir frontend via FastAPI StaticFiles — PR #4, 2026-04-29 (https://github.com/mullerdoskov/Global_Mkt/pull/4)
 - [humano-only] ISSUE-008 — Arquivar `market_platform/` e `emergent/`
 
 ## Sprint 1 — Escala
@@ -40,6 +40,19 @@ Ordem = prioridade de execução. Marcações:
 - [ ] ISSUE-020 — WebSocket de preços real-time
 
 ## Histórico
+
+- 2026-04-29 — Run #4: ISSUE-007 resolvida.
+  `frontend/index.html` agora é servido pelo próprio FastAPI via
+  `StaticFiles(directory=frontend, html=True)` montado em `/` após todos os
+  routers. Endpoint antigo `GET /` (JSON com info da API) movido para
+  `GET /api/info` para preservar o contrato. `"null"` removido do `CORS_ORIGINS`
+  (origin de `file://` deixa de ser suportada — frontend roda mesmo origin que
+  a API). README atualizado para apontar `http://localhost:8000/`.
+  Tests: `test_root_retorna_200` reescrito como `test_root_serve_index_html`;
+  adicionados `test_static_file_acessivel` e `test_api_info_retorna_json`.
+  Total: 34/34 testes passando (23 smoke + 6 prices + 5 db_url validation).
+  PR aberto sobre branch da PR #3 (stack) — auto-retarget para `main` quando
+  PRs anteriores mergearem.
 
 - 2026-04-29 — Run #1 (bootstrap): inicialização do PROGRESS.md, DECISIONS.md, .gitignore.
   Issues ISSUE-002 e ISSUE-003 resolvidas em conjunto (acopladas: query + exception handler).
