@@ -192,6 +192,79 @@ Para tornar o limite mais estrito num endpoint específico, troque o
 argumento do decorador (ex.: `@limiter.limit("10/minute")`). Para isentar
 um endpoint do gate, remova o decorador.
 
+## Cache HTTP
+
+A partir de ISSUE-011, endpoints de mercado pesados (`/api/market/summary`
+e `/api/market/sectors`) são cacheados via
+[fastapi-cache2](https://github.com/long2ice/fastapi-cache). TTL padrão é
+**15 minutos** (`CACHE_TTL_MARKET = 900` em `backend/api/market.py`). A
+chave de cache inclui método HTTP, path e query string — `/api/market/sectors`
+com `period=90d` e com `period=180d` são entradas distintas.
+
+### Backends de cache
+
+`backend/api/_cache.py` escolhe o backend automaticamente:
+
+| Cenário | Backend | Quando usar |
+|---|---|---|
+| `REDIS_URL` setada e ping ok | `RedisBackend` | Produção, multi-worker, multi-instância |
+| `REDIS_URL` ausente | `InMemoryBackend` | Dev local single-process |
+| `REDIS_URL` setada mas ping falhou | `InMemoryBackend` (com `WARNING` no log) | Tolerância a Redis indisponível em prod |
+| `CACHE_ENABLED=false` | qualquer backend, mas decorador vira no-op | Testes, debug local |
+
+`InMemoryBackend` é process-local — em multi-worker (`uvicorn --workers N`)
+cada worker mantém sua própria cópia, então a primeira request de cada
+worker miss-cache. Para cache distribuído, configure Redis (ver abaixo).
+
+### Subir Redis local
+
+```bash
+# Sobe Redis (e Postgres, opcional) via docker-compose
+docker compose -f docker-compose.dev.yml up -d redis
+
+# Confere
+docker compose -f docker-compose.dev.yml ps
+docker exec mp-redis redis-cli ping  # PONG
+
+# Configure o .env
+echo "REDIS_URL=redis://localhost:6379/0" >> .env
+```
+
+### Configuração
+
+Variáveis de ambiente (ver `.env.example`):
+
+```env
+# Opcional. Sem essa variável, cache é process-local.
+REDIS_URL=redis://localhost:6379/0
+
+# Em produção: true. Em testes: false (já configurado em conftest.py).
+CACHE_ENABLED=true
+```
+
+### Onde mexer no código
+
+- `backend/api/_cache.py` — escolha de backend, `init_cache_sync` e
+  `init_cache_async`. Lifespan chama `init_cache_async`; o módulo já chama
+  `init_cache_sync()` no import como fallback síncrono (essencial para
+  testes que pulam o lifespan).
+- `backend/api/market.py` — endpoints decorados com
+  `@cache(expire=CACHE_TTL_MARKET, namespace="market")`.
+- Para cachear outro endpoint, importe `from fastapi_cache.decorator import cache`
+  e adicione o decorador. O handler pode ser sync ou async — fastapi-cache2
+  rodaria handlers sync via `run_in_threadpool` automaticamente.
+
+### Invalidação
+
+Não há invalidação manual implementada — o TTL controla expiração. Para
+forçar limpeza:
+
+```python
+from fastapi_cache import FastAPICache
+await FastAPICache.clear(namespace="market")  # apaga só /api/market/*
+await FastAPICache.clear()                    # apaga tudo
+```
+
 ## OS 12 ENDPOINTS REST
 
 ### 1. Assets (`/api/assets`)

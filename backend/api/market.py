@@ -5,6 +5,7 @@ Endpoints de mercado: índices, setores, países.
 
 from datetime import date, timedelta
 from fastapi import APIRouter, HTTPException, Request
+from fastapi_cache.decorator import cache
 from sqlalchemy import select, func
 import pandas as pd
 
@@ -21,9 +22,16 @@ from backend.api._limiter import limiter
 
 router = APIRouter(prefix="/market", tags=["market"])
 
+# ISSUE-011: TTL do cache em segundos. 15min é o suficiente para reduzir
+# carga em queries pesadas (loop de 16 índices × 2 queries cada para summary;
+# fan-out por setor × company × asset × prices para sectors) sem deixar dado
+# muito velho. Ajustável via ambiente se necessário (futuro: settings).
+CACHE_TTL_MARKET = 900
+
 
 @router.get("/summary", response_model=MarketSummaryResponse)
 @limiter.limit(settings.rate_limit_default)
+@cache(expire=CACHE_TTL_MARKET, namespace="market")
 def get_market_summary(request: Request) -> MarketSummaryResponse:
     """
     Retorna resumo dos 16 índices globais com últimos preços.
@@ -92,6 +100,7 @@ def get_market_summary(request: Request) -> MarketSummaryResponse:
 
 @router.get("/sectors", response_model=SectorsResponse)
 @limiter.limit(settings.rate_limit_default)
+@cache(expire=CACHE_TTL_MARKET, namespace="market")
 def get_sectors_performance(request: Request, period: str = "90d") -> SectorsResponse:
     """
     Retorna performance por setor GICS (retorno médio por setor).

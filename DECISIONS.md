@@ -185,6 +185,89 @@ componentes:
 
 ---
 
+## 2026-04-30 — Cache via fastapi-cache2: backend opcional, no-op em testes
+**Issue:** ISSUE-011
+**Decisão:** Adotado `fastapi-cache2` como camada de cache HTTP nos
+endpoints pesados de mercado. Quatro componentes:
+1. `backend/api/_cache.py` instala `InMemoryBackend` em escopo de import
+   via `init_cache_sync()`. Side effect intencional: garante que rotas
+   decoradas com `@cache(...)` funcionam mesmo em testes que usam
+   `TestClient(app)` sem context-manager (lifespan não roda nesse caso).
+2. `backend/app.py` lifespan chama `await init_cache_async()` no startup.
+   Se `settings.redis_url` está setada e o ping responde, faz upgrade do
+   backend para `RedisBackend`. Falha (URL não setada, módulo redis
+   ausente, ou ping falhou) cai silenciosamente em `InMemoryBackend` com
+   `WARNING` no log — Redis é opcional, não bloqueia o startup.
+3. `/api/market/summary` e `/api/market/sectors` decorados com
+   `@cache(expire=CACHE_TTL_MARKET, namespace="market")` (TTL 900s).
+   Chave inclui método HTTP, path e query string — `period=90d` e
+   `period=180d` são entradas distintas.
+4. `conftest.py` define `CACHE_ENABLED=false` para testes; a flag passa
+   para `FastAPICache.init(..., enable=...)` e o decorador vira no-op
+   silencioso (não lê, não escreve, executa sempre o handler). Smoke
+   tests existentes não precisam de mudança. Testes específicos de cache
+   (`test_cache.py`) re-inicializam localmente com `enable=True`.
+
+**Alternativas consideradas:**
+- (a) **Exigir Redis sempre** (sem InMemoryBackend fallback). Mais simples
+  mas inviável: ambiente da Routine roda em cloud sem Redis, e dev local
+  nem sempre tem Redis. Quebraria startup. Rejeitada.
+- (b) **Cache manual sem lib** (lru_cache wrapper, ou Redis SDK direto).
+  Mais código, sem o benefício das injeções automáticas (request,
+  response headers, ETag, Cache-Control). O diagnóstico §7.2 explicitamente
+  recomenda `fastapi-cache2`. Rejeitada.
+- (c) **`aiocache`**. Alternativa válida mas não há bridge oficial para
+  FastAPI route-level decoration; o decorador da `fastapi-cache2` já
+  resolve injection de Request/Response e geração de chaves estáveis.
+  Rejeitada.
+- (d) **Aplicar cache também em `/api/prices` e `/api/assets`**. Adiada:
+  o diagnóstico recomenda `summary` e `sectors` por serem os mais pesados
+  (loop de 16 índices + fan-out por setor). Os outros endpoints já
+  retornam rápido em volume típico de uso interno. Pode ser feito em
+  PR posterior se medições justificarem.
+
+**Trade-off:**
+- `InMemoryBackend` é process-local: em multi-worker (`uvicorn --workers N`),
+  cada worker tem cache próprio, ou seja, o "hit rate" efetivo cai por
+  fator N (cada worker miss-cache na 1ª request). Para o uso atual (single-
+  worker, dev local) é inofensivo. Quando precisar escalar, configura
+  `REDIS_URL` e o cache passa a ser distribuído sem mudar uma linha de
+  código de aplicação.
+- O `slowapi` (ISSUE-010) também usa storage em memória por default. Há
+  uma sinergia futura: quando Redis estiver setado, podemos passar o
+  mesmo URI ao Limiter (`storage_uri="redis://..."`) e ter rate-limit
+  distribuído também. Não feito agora para manter o diff focado.
+- Side effect no import de `_cache.py` (chamada a `init_cache_sync()` em
+  module-level) contraria parcialmente o espírito de ISSUE-014 (eliminar
+  side effects). Justificativa: `TestClient(app)` sem context-manager não
+  dispara lifespan, e qualquer rota decorada com `@cache` lança
+  `AssertionError: You must call FastAPICache.init` na primeira request.
+  Mover o init para um pytest fixture global resolveria sem side effect,
+  mas inverteria responsabilidades (test setup virando pré-requisito de
+  produção). Documentado como decisão deliberada.
+
+**Como apply / quando revisitar:**
+- Para subir Redis em dev local: `docker compose -f docker-compose.dev.yml
+  up -d redis` e adicionar `REDIS_URL=redis://localhost:6379/0` ao `.env`.
+- Para invalidar manualmente:
+  `await FastAPICache.clear(namespace="market")` (apaga só market).
+- Para cachear outro endpoint: importar
+  `from fastapi_cache.decorator import cache` e adicionar
+  `@cache(expire=N, namespace="...")` após o `@limiter.limit(...)`.
+- Quando ISSUE-014 (remover side effects de import) for executada, mover
+  `init_cache_sync()` no module-level para um fixture autouse no
+  `conftest.py` resolve sem perder as garantias.
+
+**Bug encontrado e contornado:**
+`FastAPICache.init` (fastapi-cache2 0.2.2) retorna early se já
+inicializado: `if cls._init: return`. Sem `reset()` antes, qualquer
+re-inicialização (lifespan tentando upgrade para Redis após o
+`init_cache_sync()` do import; testes mudando `enable=True/False`)
+silenciosamente vira no-op. `init_cache_sync` e `init_cache_async`
+chamam `FastAPICache.reset()` antes de `init` — explicitado no docstring.
+
+---
+
 ## 2026-04-29 — Bootstrap do git em `market_platform_unified/` (pré-requisito não executado)
 **Issue:** N/A — procedimento de bootstrap
 **Decisão:** O pré-requisito de inicializar git em `market_platform_unified/` e conectar ao `mullerdoskov/Global_Mkt` não estava concluído quando a Routine rodou pela primeira vez. A Routine inicializou o repositório neste run, conectou ao remote existente, e abriu o PR #1. O histórico do nested `Global_Mkt_2.0/` (2 commits) não foi incorporado — a Routine não pode fazer força push nem rebase sem autorização humana. Lucas deve resolver o histórico em conjunto com ISSUE-001.

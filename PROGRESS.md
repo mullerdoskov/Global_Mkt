@@ -22,7 +22,7 @@ Ordem = prioridade de execução. Marcações:
 
 - [x] ISSUE-009 — Alembic + migrações iniciais — PR #5, 2026-04-29 (https://github.com/mullerdoskov/Global_Mkt/pull/5)
 - [x] ISSUE-010 — Rate limiting com slowapi — PR #6, 2026-04-30 (https://github.com/mullerdoskov/Global_Mkt/pull/6)
-- [ ] ISSUE-011 — Cache Redis com fastapi-cache2
+- [x] ISSUE-011 — Cache Redis com fastapi-cache2 — PR #7, 2026-04-30 (https://github.com/mullerdoskov/Global_Mkt/pull/7)
 - [ ] ISSUE-012 — Validação robusta de `period`
 - [ ] ISSUE-013 — Implementar `net_debt_ebitda` real
 - [ ] ISSUE-014 — Remover side effects de import
@@ -40,6 +40,33 @@ Ordem = prioridade de execução. Marcações:
 - [ ] ISSUE-020 — WebSocket de preços real-time
 
 ## Histórico
+
+- 2026-04-30 — Run #7: ISSUE-011 resolvida.
+  Cache HTTP via `fastapi-cache2` aplicado em `/api/market/summary` e
+  `/api/market/sectors` com TTL de 15min (`CACHE_TTL_MARKET = 900`).
+  Backend de cache escolhido em runtime: `RedisBackend` se `REDIS_URL` setada
+  e ping ok; senão `InMemoryBackend` (process-local). Falha no Redis cai
+  em InMemory com WARNING — Redis é nice-to-have, não bloqueia o start.
+  `CACHE_ENABLED=false` (default em testes via conftest.py) faz `@cache(...)`
+  virar no-op silencioso.
+  `backend/api/_cache.py` faz `init_cache_sync()` em escopo de import (para
+  garantir backend válido em testes que pulam lifespan), e `init_cache_async()`
+  no lifespan tenta upgrade para Redis. Bug encontrado e contornado:
+  `FastAPICache.init` da fastapi-cache2 retorna cedo se já inicializado
+  (`if cls._init: return`), então `reset()` é chamado antes de cada `init`.
+  `docker-compose.dev.yml` criado com Redis 7-alpine (e Postgres 17 opcional)
+  para subir as deps de dev local.
+  Tests: `tests/test_cache.py` adiciona 9 testes — wiring (4: backend,
+  prefix, enable, decorador aplicado), no-op quando desabilitado (1, com
+  6 execuções de `session.execute` em 2 requests), cache hit real com
+  InMemoryBackend (2: 2ª chamada não executa handler; query params
+  diferentes geram entradas distintas), e fallback do `init_cache_async`
+  (2: sem REDIS_URL e com Redis indisponível). Total: 53/53 passando
+  (9 cache + 7 rate_limit + 3 alembic + 23 smoke + 6 prices + 5 db_url
+  validation).
+  `requirements.txt`: +fastapi-cache2>=0.2.1, +redis>=5.0.0.
+  PR aberto sobre branch da PR #6 (stack) — auto-retarget para `main`
+  quando PRs anteriores mergearem.
 
 - 2026-04-30 — Run #6: ISSUE-010 resolvida.
   Rate limiting com slowapi habilitado em todos os endpoints sob `/api` (13
