@@ -44,8 +44,55 @@ Ordem = prioridade de execução. Marcações:
 - [x] ISSUE-021 — CI no GitHub Actions (`alembic upgrade head` + `pytest` em SQLite) — PR #16, 2026-04-30 (https://github.com/mullerdoskov/Global_Mkt/pull/16)
 - [x] ISSUE-022 — Comitar SKILL.md dos agents do ecossistema em `.claude/skills/` (pré-req #5 do prompt original) — PR #18, 2026-04-30 (https://github.com/mullerdoskov/Global_Mkt/pull/18)
 - [x] ISSUE-023 — Backups automáticos do PostgreSQL (`pg_dump` semanal + retenção 90 dias) — PR #17, 2026-04-30 (https://github.com/mullerdoskov/Global_Mkt/pull/17)
+- [x] ISSUE-024 — Eliminar último side effect de import em `backend/app.py` (`setup_logging()` em escopo de módulo) — fecha o débito explicitamente listado na orientação do Run #19 como continuação natural de ISSUE-014 — PR #19, 2026-04-30 (https://github.com/mullerdoskov/Global_Mkt/pull/19)
 
 ## Histórico
+
+- 2026-04-30 — Run #19: ISSUE-024 resolvida.
+  Último resíduo de side effect de import no backend foi fechado.
+  `backend/app.py:32` chamava `logger = setup_logging()` em escopo de
+  módulo, fazendo qualquer `import backend.app` criar o diretório
+  `logs/`, abrir RotatingFileHandler e anexar 2 handlers ao logger
+  `market_platform`. ISSUE-014 já tinha eliminado o mesmo padrão de
+  `connection.py`, `logging_config.py` e `_cache.py`; a entry-point
+  ficou de fora.
+  Agora `app.py` referencia `logger = logging.getLogger("market_platform")`
+  no module-level (puro getattr, sem I/O em disco). `setup_logging()`
+  foi movido para o primeiro passo do lifespan, antes de qualquer
+  outro log. As 5 linhas de banner que ficavam em escopo de módulo
+  (CORS habilitado, Rate limiting, Frontend mount) foram consolidadas
+  em uma função `_log_startup_banner()` chamada pelo lifespan logo
+  após `setup_logging()`. O bloco `if __name__ == "__main__":` (ativo
+  só quando alguém roda `python backend/app.py` diretamente, fora de
+  uvicorn) também passou a chamar `setup_logging()` explicitamente
+  antes das duas linhas de info que ele emite — caso contrário sairiam
+  para um logger sem handlers.
+  Decisão complementar: módulo `backend.app` deixou de importar
+  `setup_logging` apenas para chamá-la — agora importa para uso no
+  lifespan E no fallback `__main__`. Manter o import explícito (em
+  vez de `from backend.config.logging_config import setup_logging`
+  via lazy) preserva visibilidade da dependência.
+  Tests: `tests/test_no_import_side_effects.py` ganha
+  `TestAppImportSideEffects` (5 testes novos) — spy em `setup_logging`
+  durante import, spy em `os.makedirs`, asserção de zero handlers
+  novos no logger `market_platform`, pureza de
+  `logging.getLogger("market_platform")` no module-level, e wiring
+  do `_log_startup_banner` (mock no logger do módulo, captura calls
+  de info/warning, casa as 4 linhas-chave do banner — banner principal,
+  CORS, rate limiting, frontend mount). Mock-no-módulo escolhido sobre
+  caplog/handler explícito porque o full-suite tem dezenas de
+  TestClient lifespans rodando antes deste teste, mexendo nos handlers
+  do logger global; mock isola o teste de qualquer cross-test bleed.
+  Total: 275/275 passando + 1 skip pré-existente (270 anteriores +
+  5 novos em test_no_import_side_effects.py).
+  Sem dependência nova em `requirements.txt`. Sem mudança de
+  contrato — `app` continua sendo a mesma `FastAPI` instance, com
+  os mesmos endpoints, middlewares e mounts. Comportamento visível
+  ao operador: as mesmas linhas de banner aparecem no startup, só
+  que vindas do lifespan em vez de do import.
+  PR aberto sobre branch da PR #18 (stack) — auto-retarget para
+  `main` quando PRs anteriores mergearem. Por entrar fora da
+  sequência de Sprints, fica em "Não-catalogadas".
 
 - 2026-04-30 — Run #18: ISSUE-022 resolvida.
   Pré-requisito #5 do prompt original (skills do ecossistema comitadas no

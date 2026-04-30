@@ -1,8 +1,9 @@
 """
 tests/test_no_import_side_effects.py
-ISSUE-014 — importar módulos do backend não pode disparar trabalho colateral.
+ISSUE-014 / ISSUE-024 — importar módulos do backend não pode disparar
+trabalho colateral.
 
-Antes desta issue:
+Antes destas issues:
 - `backend.db.connection` chamava `load_dotenv()`, resolvia `MARKET_DB_URL` e
   rodava `create_engine(...)` em escopo de import — ou seja, importar o módulo
   podia falhar com `RuntimeError` se a env var não estivesse setada, mesmo
@@ -12,8 +13,11 @@ Antes desta issue:
   qualquer caller tivesse pedido um logger.
 - `backend.api._cache` chamava `init_cache_sync()` em escopo de import,
   registrando backend global no singleton `FastAPICache`.
+- `backend.app` chamava `setup_logging()` em escopo de módulo (linha 32) +
+  emitia 5+ `logger.info(...)` no nível de import — fechando ISSUE-014 no
+  papel mas mantendo o mesmo padrão na entry-point (`app.py`).
 
-Depois desta issue:
+Depois destas issues:
 - `connection.py`: `get_engine()`/`get_sessionmaker()` cacheados via lru_cache;
   importar é no-op (atributos como `engine`, `IS_SQLITE`, `SessionLocal`,
   `DATABASE_URL` resolvem on demand via `__getattr__`).
@@ -21,8 +25,12 @@ Depois desta issue:
   idempotente, e `get_logger(name)` é o ponto de entrada recomendado.
 - `_cache.py`: side effect de import removido; uma fixture autouse em
   `conftest.py` instala o backend para os testes, lifespan instala em prod.
+- `app.py` (ISSUE-024): `logger = logging.getLogger("market_platform")` em
+  escopo de módulo (puro getattr, sem I/O); `setup_logging()` movido para o
+  primeiro passo do lifespan; banner de boot encapsulado em
+  `_log_startup_banner()` chamado pelo lifespan.
 
-Estes testes garantem que os 3 módulos podem ser carregados em isolamento
+Estes testes garantem que os 4 módulos podem ser carregados em isolamento
 SEM realizar nenhuma das operações acima.
 """
 
@@ -283,3 +291,177 @@ class TestCacheImportSideEffects:
         # manualmente após este teste.
         from backend.api._cache import init_cache_sync
         init_cache_sync()
+
+
+# ════════════════════════════════════════════════════════════════════
+# 4. backend.app  (ISSUE-024)
+# ════════════════════════════════════════════════════════════════════
+
+
+class TestAppImportSideEffects:
+    """Antes de ISSUE-024:
+    - `app.py:32` rodava `logger = setup_logging()`, criando `logs/` e abrindo
+      RotatingFileHandler no momento do import.
+    - 5+ `logger.info(...)` em escopo de módulo geravam I/O imediato (banner +
+      CORS + rate limiting + frontend mount).
+
+    Depois de ISSUE-024:
+    - `logger = logging.getLogger("market_platform")` (sem setup, sem I/O).
+    - `setup_logging()` movido para a primeira linha do lifespan.
+    - Banner consolidado em `_log_startup_banner()`, também chamado pelo
+      lifespan.
+    """
+
+    def _purge_app_chain(self) -> None:
+        """Reset dos módulos que `backend.app` importa direta ou
+        indiretamente, para que um reimport seja realmente fresh.
+
+        Mantém `backend.config.logging_config` no `sys.modules` porque os
+        testes deste arquivo (TestLoggingConfigImportSideEffects) já cobrem
+        o módulo isoladamente; aqui queremos a interação `app.py` →
+        `logging_config.setup_logging`, que existe assim que ambos estão
+        em sys.modules.
+        """
+        _purge_module("backend.app")
+
+    def test_import_nao_chama_setup_logging(self, monkeypatch):
+        """Spy em `setup_logging` antes do import: módulo não pode invocá-la
+        em escopo de import. ISSUE-024 desloca a chamada para o lifespan.
+        """
+        # Garante que `backend.config.logging_config` já está carregado
+        # (foi pelos testes anteriores deste arquivo, ou via conftest).
+        import backend.config.logging_config as logging_config
+
+        calls: list = []
+
+        def spy(*args, **kwargs):
+            calls.append((args, kwargs))
+            return logging.getLogger("market_platform")
+
+        monkeypatch.setattr(logging_config, "setup_logging", spy)
+
+        self._purge_app_chain()
+        importlib.import_module("backend.app")
+
+        assert calls == [], (
+            f"setup_logging foi chamado em escopo de import de backend.app "
+            f"({len(calls)} vezes); ISSUE-024 regrediu"
+        )
+
+    def test_import_nao_chama_makedirs_logs(self, monkeypatch):
+        """`setup_logging` cria `logs/` via `os.makedirs`. Spy em
+        `os.makedirs`: nenhuma chamada deve sair do import de backend.app.
+        """
+        calls: list = []
+        real_makedirs = os.makedirs
+
+        def spy_makedirs(path, *args, **kwargs):
+            calls.append(str(path))
+            return real_makedirs(path, *args, **kwargs)
+
+        monkeypatch.setattr("os.makedirs", spy_makedirs)
+
+        self._purge_app_chain()
+        importlib.import_module("backend.app")
+
+        # Aceitamos zero chamadas — qualquer makedirs seria evidência de
+        # side effect (LOG_DIR ou outro caminho criado durante import).
+        assert calls == [], (
+            f"os.makedirs foi chamado durante import de backend.app: "
+            f"{calls}; ISSUE-024 regrediu"
+        )
+
+    def test_import_nao_adiciona_handlers_no_logger(self, monkeypatch):
+        """O logger `market_platform` não pode ganhar handlers durante o
+        import de backend.app. Antes da issue, `setup_logging()` em module-
+        level adicionava 2 handlers (StreamHandler + RotatingFileHandler).
+        """
+        # Limpa handlers preexistentes para isolar — outros testes
+        # (test_setup_logging_idempotente, ou simplesmente pytest com
+        # `-s`) podem ter deixado handlers.
+        target = logging.getLogger("market_platform")
+        original_handlers = list(target.handlers)
+        for h in original_handlers:
+            target.removeHandler(h)
+
+        try:
+            self._purge_app_chain()
+            importlib.import_module("backend.app")
+
+            # `from backend.config.logging_config import setup_logging` apenas
+            # bind a função no namespace — não a executa. Logger fica sem
+            # handlers.
+            assert target.handlers == [], (
+                f"logger 'market_platform' ganhou handlers durante import "
+                f"de backend.app ({target.handlers}); ISSUE-024 regrediu"
+            )
+        finally:
+            # Restaura handlers para os próximos testes (que podem usar
+            # logging em assertions de smoke/integração).
+            for h in original_handlers:
+                target.addHandler(h)
+
+    def test_logger_no_module_e_getlogger_puro(self):
+        """Garante que o `logger` exportado por backend.app é o resultado
+        de `logging.getLogger("market_platform")` puro — sem qualquer
+        configuração extra. Assim, alterar handlers a partir de
+        `setup_logging()` (via lifespan) afeta o mesmo objeto.
+        """
+        self._purge_app_chain()
+        mod = importlib.import_module("backend.app")
+
+        assert mod.logger is logging.getLogger("market_platform"), (
+            "backend.app.logger deveria ser o logger root do projeto, "
+            "obtido via logging.getLogger('market_platform') sem chamar "
+            "setup_logging em escopo de import"
+        )
+
+    def test_log_startup_banner_emite_linhas_esperadas(self, monkeypatch):
+        """Wiring do banner: chamar `_log_startup_banner()` (que o lifespan
+        invoca depois de setup_logging) emite as 4 linhas-chave do estado
+        de boot. Garante que mover as mensagens do module-level para o
+        lifespan não derrubou o que o operador via no console.
+
+        Substitui `mod.logger` por um Mock para evitar dependência de
+        propagação/caplog/handler-state — o full-suite tem dezenas de
+        TestClient lifespans rodando antes deste teste, mexendo nos
+        handlers do logger global. Mock no nível do módulo é à prova de
+        cross-test bleed.
+        """
+        from unittest.mock import MagicMock
+
+        self._purge_app_chain()
+        mod = importlib.import_module("backend.app")
+
+        # Garante que cors_origins está populado (módulo já avaliou).
+        assert isinstance(mod.cors_origins, list)
+
+        fake_logger = MagicMock()
+        monkeypatch.setattr(mod, "logger", fake_logger)
+
+        mod._log_startup_banner()
+
+        # Concatena (level, message) de cada chamada para inspeção.
+        info_messages = [
+            str(call.args[0]) for call in fake_logger.info.call_args_list
+        ]
+        warning_messages = [
+            str(call.args[0]) for call in fake_logger.warning.call_args_list
+        ]
+        all_messages = info_messages + warning_messages
+
+        assert any("Iniciando market_platform_unified backend" in m for m in info_messages), (
+            f"banner de boot ausente em info()={info_messages}"
+        )
+        assert any("CORS habilitado" in m for m in info_messages), (
+            f"linha de CORS ausente em info()={info_messages}"
+        )
+        assert any("Rate limiting" in m for m in info_messages), (
+            f"linha de rate limiting ausente em info()={info_messages}"
+        )
+        # Frontend ou monta (info) ou avisa que diretório não existe (warning).
+        assert any(
+            ("Frontend estático montado" in m) or
+            ("Diretório de frontend não encontrado" in m)
+            for m in all_messages
+        ), f"linha de frontend ausente em info()+warning()={all_messages}"
