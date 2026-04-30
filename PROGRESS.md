@@ -12,7 +12,7 @@ Ordem = prioridade de execução. Marcações:
 - [humano-only] ISSUE-001 — Decidir destino do nested `Global_Mkt_2.0/`
 - [x] ISSUE-002 — Fix `GET /api/prices` (DISTINCT ON + paginação) — PR #1, 2026-04-29 (https://github.com/mullerdoskov/Global_Mkt/pull/1)
 - [x] ISSUE-003 — Fix exception handler em `app.py` — PR #1, 2026-04-29 (https://github.com/mullerdoskov/Global_Mkt/pull/1)
-- [x] ISSUE-004 — Remover senha hardcoded em `connection.py:16` e `settings.py:13` — PR #2, 2026-04-29
+- [x] ISSUE-004 — Remover senha hardcoded em `connection.py:16` e `settings.py:13` — PR #2, 2026-04-29 (https://github.com/mullerdoskov/Global_Mkt/pull/2)
 - [humano-only] ISSUE-005 — Auditar git history por senha (filter-repo é destrutivo)
 - [ ] ISSUE-006 — Smoke tests da API (cobertura completa, 1 teste por endpoint)
 - [ ] ISSUE-007 — Servir frontend via FastAPI StaticFiles
