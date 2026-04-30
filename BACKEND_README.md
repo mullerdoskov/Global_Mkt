@@ -138,6 +138,60 @@ Fluxo recomendado para evoluir o schema:
 O teste `tests/test_alembic_migration.py::test_no_drift_entre_metadata_e_migration_head`
 falha se alguém alterar `schema.py` sem gerar migração — gate no CI.
 
+## Rate limiting
+
+A partir de ISSUE-010, todos os endpoints sob `/api` são limitados via
+[slowapi](https://github.com/laurentS/slowapi). A chave de identificação é o
+endereço IP remoto (`get_remote_address`); o limite default é
+**60 requisições por minuto por IP**.
+
+Endpoints fora do gate (não limitados):
+- `GET /health`
+- `GET /api/info`
+- Frontend estático servido pelo `StaticFiles` em `/`
+- `/docs`, `/redoc`, `/openapi.json`
+
+### Configuração
+
+Variáveis de ambiente (ver `.env.example`):
+
+```env
+# Vocabulário do `limits`: <count>/<seconds|minute|hour|day>
+RATE_LIMIT_DEFAULT=60/minute
+
+# Em produção: true. Em testes: false (já configurado em conftest.py).
+RATE_LIMIT_ENABLED=true
+```
+
+Quando `RATE_LIMIT_ENABLED=false`, o `Limiter` é instanciado em modo no-op:
+decoradores e middleware seguem montados mas não bloqueiam — útil para os
+testes (que disparam várias chamadas em sequência da mesma origem) e para
+dev local quando se quer eliminar o gate como variável.
+
+### Resposta quando o limite é excedido
+
+Status `429 Too Many Requests` com corpo JSON descrevendo o limite atingido:
+
+```json
+{ "error": "Rate limit exceeded: 60 per 1 minute" }
+```
+
+O cabeçalho `Retry-After` (em segundos) também é emitido pelo `slowapi`.
+
+### Onde mexer no código
+
+- `backend/api/_limiter.py` — instância única do `Limiter` lida por
+  `app.py` e por cada router.
+- `backend/app.py` — registra `app.state.limiter`, exception handler e
+  `SlowAPIMiddleware`.
+- Cada `backend/api/*.py` — endpoints decorados com
+  `@limiter.limit(settings.rate_limit_default)` e recebem `request: Request`
+  como parâmetro nomeado (exigido pelo slowapi).
+
+Para tornar o limite mais estrito num endpoint específico, troque o
+argumento do decorador (ex.: `@limiter.limit("10/minute")`). Para isentar
+um endpoint do gate, remova o decorador.
+
 ## OS 12 ENDPOINTS REST
 
 ### 1. Assets (`/api/assets`)

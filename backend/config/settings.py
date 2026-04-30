@@ -25,6 +25,13 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8000
 
+    # Rate limiting (ISSUE-010). `rate_limit_default` aceita o vocabulário do
+    # `limits` (ex.: "60/minute", "1000/hour"). `rate_limit_enabled=False`
+    # transforma o limiter em no-op — usado pela suíte de testes para não
+    # afetar smoke tests, e pode ser desligado em dev local se necessário.
+    rate_limit_default: str = "60/minute"
+    rate_limit_enabled: bool = True
+
     class Config:
         """Configuração de origem dos valores."""
         env_file = ".env"

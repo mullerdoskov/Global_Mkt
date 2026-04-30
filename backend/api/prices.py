@@ -5,13 +5,15 @@ Endpoints de preços históricos e retornos.
 
 from typing import Optional
 from datetime import date, timedelta
-from fastapi import APIRouter, Query, HTTPException
+from fastapi import APIRouter, Query, HTTPException, Request
 from sqlalchemy import select
 import pandas as pd
 
+from backend.config.settings import settings
 from backend.db.connection import get_session
 from backend.db.schema import Asset, PriceDaily
 from backend.api.models import PriceHistoryResponse, PriceBar, ReturnsResponse, ReturnData, LatestPricesResponse, LatestPrice
+from backend.api._limiter import limiter
 
 router = APIRouter(prefix="/prices", tags=["prices"])
 
@@ -37,7 +39,9 @@ def _parse_period(period: str) -> int:
 
 
 @router.get("/{symbol}/history", response_model=PriceHistoryResponse)
+@limiter.limit(settings.rate_limit_default)
 def get_price_history(
+    request: Request,
     symbol: str,
     period: str = Query("90d", description="Período: 30d, 1y, etc."),
     interval: str = Query("1d", description="Intervalo: 1d (diário), não suportado intraday no momento"),
@@ -98,7 +102,9 @@ def get_price_history(
 
 
 @router.get("/{symbol}/returns", response_model=ReturnsResponse)
+@limiter.limit(settings.rate_limit_default)
 def get_returns(
+    request: Request,
     symbol: str,
     period: str = Query("90d", description="Período: 30d, 1y, etc."),
 ) -> ReturnsResponse:
@@ -171,7 +177,8 @@ def get_returns(
 
 
 @router.get("/debug")
-def debug_prices():
+@limiter.limit(settings.rate_limit_default)
+def debug_prices(request: Request):
     """Endpoint de debug — mostra contagens e amostra de dados."""
     from sqlalchemy import text as sql_text
     session = get_session()
@@ -198,7 +205,9 @@ def debug_prices():
 
 
 @router.get("", response_model=LatestPricesResponse)
+@limiter.limit(settings.rate_limit_default)
 def get_latest_prices(
+    request: Request,
     asset_type: Optional[str] = Query(None, description="Filtra por tipo: stock, index, etc."),
     page: int = Query(1, ge=1, description="Página (começa em 1)"),
     page_size: int = Query(50, ge=1, le=100, description="Itens por página (máx 100)"),

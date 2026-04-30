@@ -9,6 +9,9 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.responses import JSONResponse
 
@@ -18,6 +21,7 @@ from backend.db.connection import test_connection, engine
 from backend.db.schema import create_all_tables
 from backend.api.router import api_router
 from backend.api.models import HealthResponse
+from backend.api._limiter import limiter
 
 # Diretório com o SPA estático (frontend/index.html). Resolvido a partir de
 # backend/app.py para não depender do CWD em que uvicorn for invocado.
@@ -100,6 +104,32 @@ app.add_middleware(
 )
 
 logger.info(f"✅ CORS habilitado para: {cors_origins}")
+
+
+# ══════════════════════════════════════════════
+# RATE LIMITING (ISSUE-010)
+# ══════════════════════════════════════════════
+#
+# Limiter é compartilhado entre app e routers (ver `backend/api/_limiter.py`).
+# Cada endpoint público dos sub-routers em `backend/api/*.py` usa
+# `@limiter.limit(settings.rate_limit_default)`. Endpoints administrativos
+# (`/health`, `/api/info`) ficam fora — health checks de monitoramento e
+# discovery não devem ser limitados. Estáticos sob `/` (StaticFiles) também
+# ficam fora porque o middleware só atua em rotas decoradas.
+#
+# Quando `settings.rate_limit_enabled=False` (ex.: testes), o limiter é
+# instanciado como no-op — middleware e decoradores ficam em vigor, mas
+# não bloqueiam.
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
+
+logger.info(
+    f"✅ Rate limiting (slowapi) "
+    f"{'habilitado' if settings.rate_limit_enabled else 'DESABILITADO (no-op)'}; "
+    f"default={settings.rate_limit_default}"
+)
 
 
 # ══════════════════════════════════════════════
