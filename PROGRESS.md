@@ -14,7 +14,7 @@ Ordem = prioridade de execução. Marcações:
 - [x] ISSUE-003 — Fix exception handler em `app.py` — PR #1, 2026-04-29 (https://github.com/mullerdoskov/Global_Mkt/pull/1)
 - [x] ISSUE-004 — Remover senha hardcoded em `connection.py:16` e `settings.py:13` — PR #2, 2026-04-29 (https://github.com/mullerdoskov/Global_Mkt/pull/2)
 - [humano-only] ISSUE-005 — Auditar git history por senha (filter-repo é destrutivo)
-- [ ] ISSUE-006 — Smoke tests da API (cobertura completa, 1 teste por endpoint)
+- [x] ISSUE-006 — Smoke tests da API (cobertura completa, 1 teste por endpoint) — PR #3, 2026-04-29
 - [ ] ISSUE-007 — Servir frontend via FastAPI StaticFiles
 - [humano-only] ISSUE-008 — Arquivar `market_platform/` e `emergent/`
 
@@ -46,6 +46,19 @@ Ordem = prioridade de execução. Marcações:
   Infraestrutura de testes criada (pytest + conftest + test_prices_endpoint.py — 6/6 testes passando).
   Nota: git inicializado em `market_platform_unified/` neste run (pré-requisito não estava concluído).
   ISSUE-001 (humano-only) ainda pendente — bloqueia decisão sobre `Global_Mkt_2.0/`.
+
+- 2026-04-29 — Run #3: ISSUE-006 resolvida.
+  Adicionado `tests/test_api_smoke.py` com 21 testes cobrindo todos os 13 endpoints
+  da `api_router` + `/health` + `/`. Estratégia: patch de `get_session` por módulo,
+  com `MagicMock` cuja `.execute()` retorna resultados em sequência. Endpoints com
+  parâmetro `{symbol}` ganharam também o caminho 404. Total: 32/32 testes passando
+  (21 smoke + 6 prices + 5 db_url validation).
+  Bônus de escopo: `IndexSnapshot.date` renomeado para `index_date` (mesma classe
+  de bug Pydantic-v2 já documentada para `LatestPrice.price_date` em DECISIONS.md).
+  Sem o rename, o smoke test do `/api/market/summary` falhava com `none_required`
+  ao serializar qualquer índice com data real — bug latente em produção.
+  Frontend não consome o campo, então a renomeação é segura.
+  PR aberto sobre branch da PR #2 (stack) — auto-retarget para `main` quando #1 e #2 mergearem.
 
 - 2026-04-29 — Run #2: ISSUE-004 resolvida.
   Removida credencial hardcoded `141592` do código (`connection.py`, `settings.py`)

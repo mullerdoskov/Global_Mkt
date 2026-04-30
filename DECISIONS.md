@@ -38,6 +38,30 @@ configuração devem ser explícitas. A documentação (`BACKEND_README.md`,
 
 ---
 
+## 2026-04-29 — Campo `index_date` em `IndexSnapshot` (renomeado de `date`)
+**Issue:** ISSUE-006 (correção colateral revelada pelos smoke tests)
+**Decisão:** O campo foi renomeado de `date` para `index_date` em `IndexSnapshot`,
+seguindo a mesma resolução já aplicada a `LatestPrice.price_date`. Em Pydantic v2,
+declarar `date: Optional[date] = None` faz com que `date = None` no corpo da classe
+sobrescreva a referência ao tipo importado, e o validador passa a exigir `None`
+(`type=none_required`). O endpoint `/api/market/summary` falharia em runtime para
+qualquer índice com preço/data real — bug latente que o smoke test (com mock
+retornando `price_row.date = date(2026, 4, 25)`) revelou imediatamente.
+**Alternativas consideradas:** (1) usar `import datetime as _dt` e `Optional[_dt.date]`;
+(2) deixar o bug e fazer o smoke test usar apenas o caminho de "asset não encontrado"
+(que emite `IndexSnapshot(... index_date=None)` e passa pela validação); (3) abrir
+issue separada sem corrigir agora.
+**Trade-off:** quebra de contrato JSON (`indices[].date` → `indices[].index_date`).
+Frontend (`frontend/index.html`) não usa o campo — verificado por grep. Se algum
+consumidor externo existir, vai precisar atualizar. Optei por consertar agora porque:
+(a) é o mesmo bug-class de `LatestPrice` já corrigido com a mesma estratégia;
+(b) sem o rename, o smoke test não consegue exercitar o caminho de sucesso do
+endpoint (o que é o objetivo da ISSUE-006); (c) deixar metade do codebase com
+`Optional[date] = None` quebrado e a outra metade consertada é incoerência pior
+que a quebra de contrato.
+
+---
+
 ## 2026-04-29 — Bootstrap do git em `market_platform_unified/` (pré-requisito não executado)
 **Issue:** N/A — procedimento de bootstrap
 **Decisão:** O pré-requisito de inicializar git em `market_platform_unified/` e conectar ao `mullerdoskov/Global_Mkt` não estava concluído quando a Routine rodou pela primeira vez. A Routine inicializou o repositório neste run, conectou ao remote existente, e abriu o PR #1. O histórico do nested `Global_Mkt_2.0/` (2 commits) não foi incorporado — a Routine não pode fazer força push nem rebase sem autorização humana. Lucas deve resolver o histórico em conjunto com ISSUE-001.
