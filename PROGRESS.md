@@ -41,7 +41,7 @@ Ordem = prioridade de execução. Marcações:
 
 ## Não-catalogadas (alavanca alta, baixo risco)
 
-- [x] ISSUE-021 — CI no GitHub Actions (`alembic upgrade head` + `pytest` em SQLite) — PR #16, 2026-04-30
+- [x] ISSUE-021 — CI no GitHub Actions (`alembic upgrade head` + `pytest` em SQLite) — PR #16, 2026-04-30 (https://github.com/mullerdoskov/Global_Mkt/pull/16)
 - [ ] ISSUE-022 — Comitar SKILL.md dos agents do ecossistema em `.claude/skills/` (pré-req #5 do prompt original)
 - [ ] ISSUE-023 — Backups automáticos do PostgreSQL (`pg_dump` semanal + retention mensal)
 
