@@ -268,6 +268,56 @@ chamam `FastAPICache.reset()` antes de `init` — explicitado no docstring.
 
 ---
 
+## 2026-04-30 — Validação estrita de `period`: rejeita silenciamento por padrão
+**Issue:** ISSUE-012
+**Decisão:** Toda string `period` aceita pelos endpoints
+(`/api/prices/{symbol}/history`, `/api/prices/{symbol}/returns`,
+`/api/market/sectors`) passa por `backend/api/_periods.parse_period`
+antes de qualquer outra lógica. Aceita exatamente
+`<inteiro positivo><unidade>` com unidade em {d, w, m, y}, range
+`1d..10y` (inclusive). Qualquer outro formato → `HTTPException(422)`
+com mensagem útil. O retorno é um `ParsedPeriod` (frozen dataclass)
+com `raw` (string original, para ecoar na resposta) e `delta`
+(timedelta, para cálculo de start_date). Wired via
+`Depends(period_dep)`.
+**Alternativas consideradas:**
+- (a) Manter o fallback silencioso para 90d. Rejeitada — mascara typos
+  do cliente (ex.: `peridod=180d` virava `90d` sem aviso) e impede
+  qualquer monitoramento de "uso indevido da API".
+- (b) Validar via Pydantic `constr` ou `Annotated[str, ...]` no Query.
+  Possível, mas a mensagem de erro do Pydantic em regex falha é
+  genérica (`String should match pattern '...'`). Função dedicada
+  permite mensagem de erro contextual ("range permitido", exemplos,
+  o que está errado em específico) e centraliza o range check.
+- (c) Aceitar formato extenso (`30days`, `1year`). Rejeitada — o
+  contrato pré-existente do frontend já usa o formato curto e o
+  briefing do projeto referencia `30d, 1y, etc.`. Mais formatos = mais
+  superfície de teste sem ganho.
+- (d) Aceitar maiúsculas (`30D`). Rejeitada — sem demanda do frontend
+  e diverge do contrato do Yahoo Finance (yfinance usa lowercase). Se
+  a demanda surgir, basta normalizar com `.lower()` antes do regex.
+- (e) Retornar `ParsedPeriod` direto pelos handlers (ecoar `delta`
+  como segundos no JSON). Rejeitada — quebra contrato existente
+  (`period: str` nos response models) e o cliente espera receber a
+  string que mandou.
+**Trade-off:**
+- Quebra de comportamento: clientes que mandavam strings inválidas e
+  recebiam 200 com 90d agora recebem 422. Sem analytics de quem
+  mandava o quê em produção, optei pela quebra explícita — é o
+  comportamento documentado no diagnóstico §7.2 (I3) e o frontend já
+  usa apenas formatos válidos (`30d`, `90d`, `180d`, `1y` — verificado
+  por grep em `frontend/index.html`).
+- O `default_key_builder` da fastapi-cache2 inclui `repr(kwargs)` na
+  chave de cache. `ParsedPeriod` é frozen dataclass, então `repr` é
+  estável entre instâncias com mesmo `raw`. Cache continua funcionando
+  como antes (`period=90d` e `period=180d` viram entradas distintas;
+  duas chamadas com `period=90d` viram a 2ª como hit).
+- Função `prices._parse_period` removida (era o único usuário,
+  agora substituída pela versão estrita de `_periods`). Mantém o diff
+  focado e elimina código morto.
+
+---
+
 ## 2026-04-29 — Bootstrap do git em `market_platform_unified/` (pré-requisito não executado)
 **Issue:** N/A — procedimento de bootstrap
 **Decisão:** O pré-requisito de inicializar git em `market_platform_unified/` e conectar ao `mullerdoskov/Global_Mkt` não estava concluído quando a Routine rodou pela primeira vez. A Routine inicializou o repositório neste run, conectou ao remote existente, e abriu o PR #1. O histórico do nested `Global_Mkt_2.0/` (2 commits) não foi incorporado — a Routine não pode fazer força push nem rebase sem autorização humana. Lucas deve resolver o histórico em conjunto com ISSUE-001.

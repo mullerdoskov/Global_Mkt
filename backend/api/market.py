@@ -4,7 +4,7 @@ Endpoints de mercado: índices, setores, países.
 """
 
 from datetime import date, timedelta
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Depends
 from fastapi_cache.decorator import cache
 from sqlalchemy import select, func
 import pandas as pd
@@ -19,6 +19,7 @@ from backend.api.models import (
     CountriesResponse, CountryAssets
 )
 from backend.api._limiter import limiter
+from backend.api._periods import ParsedPeriod, period_dep
 
 router = APIRouter(prefix="/market", tags=["market"])
 
@@ -101,26 +102,21 @@ def get_market_summary(request: Request) -> MarketSummaryResponse:
 @router.get("/sectors", response_model=SectorsResponse)
 @limiter.limit(settings.rate_limit_default)
 @cache(expire=CACHE_TTL_MARKET, namespace="market")
-def get_sectors_performance(request: Request, period: str = "90d") -> SectorsResponse:
+def get_sectors_performance(
+    request: Request,
+    period: ParsedPeriod = Depends(period_dep),
+) -> SectorsResponse:
     """
     Retorna performance por setor GICS (retorno médio por setor).
 
     Parâmetro:
-    - period: Período para cálculo (90d por padrão)
+    - period: Período para cálculo (default 90d). Validado por
+      `_periods.parse_period` — aceita `<n><d|w|m|y>` no range 1d..10y;
+      outros valores → 422.
     """
     session = get_session()
     try:
-        # Calcula data inicial
-        if period.endswith("d"):
-            days = int(period[:-1])
-        elif period.endswith("m"):
-            days = int(period[:-1]) * 30
-        elif period.endswith("y"):
-            days = int(period[:-1]) * 365
-        else:
-            days = 90
-
-        start_date = date.today() - timedelta(days=days)
+        start_date = date.today() - timedelta(days=period.days)
 
         # Busca todos os setores
         sectors_query = select(SectorGICS).order_by(SectorGICS.sector)
@@ -161,7 +157,7 @@ def get_sectors_performance(request: Request, period: str = "90d") -> SectorsRes
                         sector_pt=sector.sector_pt or sector.sector,
                         avg_return_pct=None,
                         asset_count=len(asset_ids),
-                        period=period,
+                        period=period.raw,
                     )
                 )
                 continue
@@ -191,12 +187,12 @@ def get_sectors_performance(request: Request, period: str = "90d") -> SectorsRes
                     sector_pt=sector.sector_pt or sector.sector,
                     avg_return_pct=avg_return,
                     asset_count=len(asset_ids),
-                    period=period,
+                    period=period.raw,
                 )
             )
 
         return SectorsResponse(
-            period=period,
+            period=period.raw,
             as_of=date.today(),
             sectors=sector_performances,
         )

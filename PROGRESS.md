@@ -23,7 +23,7 @@ Ordem = prioridade de execução. Marcações:
 - [x] ISSUE-009 — Alembic + migrações iniciais — PR #5, 2026-04-29 (https://github.com/mullerdoskov/Global_Mkt/pull/5)
 - [x] ISSUE-010 — Rate limiting com slowapi — PR #6, 2026-04-30 (https://github.com/mullerdoskov/Global_Mkt/pull/6)
 - [x] ISSUE-011 — Cache Redis com fastapi-cache2 — PR #7, 2026-04-30 (https://github.com/mullerdoskov/Global_Mkt/pull/7)
-- [ ] ISSUE-012 — Validação robusta de `period`
+- [x] ISSUE-012 — Validação robusta de `period` — PR #8, 2026-04-30 (https://github.com/mullerdoskov/Global_Mkt/pull/8)
 - [ ] ISSUE-013 — Implementar `net_debt_ebitda` real
 - [ ] ISSUE-014 — Remover side effects de import
 
@@ -40,6 +40,41 @@ Ordem = prioridade de execução. Marcações:
 - [ ] ISSUE-020 — WebSocket de preços real-time
 
 ## Histórico
+
+- 2026-04-30 — Run #8: ISSUE-012 resolvida.
+  Validação estrita de `period` centralizada em `backend/api/_periods.py`.
+  `parse_period(period: str) -> ParsedPeriod` aceita exatamente
+  `<inteiro positivo><unidade>` com unidade em {d, w, m, y}, range
+  `1d..10y` (inclusive). `ParsedPeriod` é frozen dataclass com `raw`
+  (string original, ecoada na resposta) e `delta` (timedelta para
+  cálculos). `period_dep` envolve a validação como `Depends`,
+  declarando `period` como `Query("90d", ...)` para preservar o
+  contrato de OpenAPI/Swagger.
+  Comportamento antigo: `prices._parse_period` e o parsing inline em
+  `market.py` caíam silenciosamente em 90d para qualquer formato
+  desconhecido (typos viravam "default"). Novo: 422 explícito com
+  mensagem útil. `prices._parse_period` removido (era o único usuário).
+  Wiring: 3 endpoints atualizados — `/api/prices/{symbol}/history`,
+  `/api/prices/{symbol}/returns`, `/api/market/sectors`. Resposta JSON
+  ecoa `period` original (ex: cliente pede `4w`, resposta tem
+  `period: "4w"`, não `"28d"`).
+  Cache (ISSUE-011) revalidado: query string permanece como base do
+  `default_key_builder` da fastapi-cache2, então `period=90d` e
+  `period=180d` continuam gerando entradas distintas; `period=90d`
+  duas vezes seguidas continua servindo do cache. `ParsedPeriod` é
+  frozen para que `repr` seja estável caso o key builder mude para
+  considerar args.
+  Tests: `tests/test_periods.py` adiciona 65 testes — 12 casos válidos
+  parametrizados (incluindo boundaries 1d e 10y), 23 casos inválidos
+  (vazio, formato livre, decimal, negativo, unidade não suportada,
+  acima do MAX_DAYS), 3 testes de `period_dep`, 18 testes de integração
+  (3 endpoints × 6 períodos inválidos via parametrize), e 4 caminhos
+  felizes (5y, default omitido, 4w, 1y) confirmando wiring correto.
+  Total: 118/118 testes passando + 1 skip intencional
+  (9 cache + 7 rate_limit + 3 alembic + 23 smoke + 6 prices + 5 db_url +
+  65 periods).
+  PR aberto sobre branch da PR #7 (stack) — auto-retarget para `main`
+  quando PRs anteriores mergearem.
 
 - 2026-04-30 — Run #7: ISSUE-011 resolvida.
   Cache HTTP via `fastapi-cache2` aplicado em `/api/market/summary` e
