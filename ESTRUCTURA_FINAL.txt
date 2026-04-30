@@ -1,0 +1,241 @@
+╔═══════════════════════════════════════════════════════════════════════════╗
+║         MARKET PLATFORM UNIFIED — BACKEND FASTAPI v1.0.0                  ║
+║  Unificação do emergent (frontend) + market_platform (backend dados reais) ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+
+DIRETÓRIO RAIZ
+/sessions/hopeful-determined-heisenberg/mnt/Global_Mkt/market_platform_unified/
+
+├── backend/                          [28 arquivos criados]
+│   ├── __init__.py
+│   ├── app.py                        [⭐ FastAPI app principal]
+│   ├── cli.py                        [⭐ CLI para ingestão]
+│   ├── ingest_resumable.py           [✅ Copiado intacto]
+│   ├── requirements.txt              [⭐ Dependências]
+│   │
+│   ├── config/                       [Configurações]
+│   │   ├── __init__.py
+│   │   ├── settings.py               [⭐ Pydantic-settings]
+│   │   ├── logging_config.py         [✅ Copiado intacto]
+│   │   └── symbols.py                [✅ Copiado intacto — 360 tickers]
+│   │
+│   ├── db/                           [Banco de dados]
+│   │   ├── __init__.py
+│   │   ├── connection.py             [✅ Copiado intacto]
+│   │   └── schema.py                 [✅ Copiado intacto — 9 tabelas]
+│   │
+│   ├── data/                         [Dados de referência]
+│   │   ├── __init__.py
+│   │   ├── calendar.py               [✅ Copiado intacto]
+│   │   └── sectors_gics.py           [✅ Copiado intacto — 34 setores]
+│   │
+│   ├── ingestion/                    [Ingestão de dados]
+│   │   ├── __init__.py
+│   │   ├── yf_client.py              [✅ Copiado intacto]
+│   │   ├── loader.py                 [✅ Copiado intacto]
+│   │   └── fundamentals_loader.py    [✅ Copiado intacto]
+│   │
+│   ├── api/                          [Endpoints REST — 12 total]
+│   │   ├── __init__.py
+│   │   ├── router.py                 [⭐ Agregador de routers]
+│   │   ├── models.py                 [⭐ Modelos Pydantic]
+│   │   ├── assets.py                 [⭐ GET /api/assets (3 endpoints)]
+│   │   ├── prices.py                 [⭐ GET /api/prices (3 endpoints)]
+│   │   ├── market.py                 [⭐ GET /api/market (3 endpoints)]
+│   │   ├── fundamentals.py           [⭐ GET /api/fundamentals (2 endpoints)]
+│   │   └── ingestion.py              [⭐ GET /api/ingestion (1 endpoint)]
+│   │
+│   └── sql/                          [Queries úteis]
+│       └── useful_queries.sql        [⭐ 10 queries de análise]
+│
+├── .env.example                      [⭐ Template de configuração]
+├── BACKEND_README.md                 [⭐ Documentação completa]
+└── ESTRUCTURA_FINAL.txt              [Este arquivo]
+
+═══════════════════════════════════════════════════════════════════════════
+
+🎯 OS 12 ENDPOINTS REST
+
+1️⃣  GET /api/assets
+2️⃣  GET /api/assets/search?q={query}
+3️⃣  GET /api/assets/{symbol}
+4️⃣  GET /api/prices/{symbol}/history?period=90d
+5️⃣  GET /api/prices/{symbol}/returns?period=90d
+6️⃣  GET /api/prices (últimos preços snapshot)
+7️⃣  GET /api/market/summary (16 índices)
+8️⃣  GET /api/market/sectors (performance por setor)
+9️⃣  GET /api/market/countries (contagem por país)
+🔟 GET /api/fundamentals/{symbol} (DRE, balanço, FCF)
+1️⃣1️⃣ GET /api/fundamentals/{symbol}/valuation (múltiplos)
+1️⃣2️⃣ GET /api/ingestion/status (log resumido)
+
+═══════════════════════════════════════════════════════════════════════════
+
+📊 BASE DE DADOS — 9 TABELAS
+
+1. countries         — 12 países (BR, US, GB, DE, FR, NL, CH, JP, CN, AU, CA, XX)
+2. sectors_gics      — 34 setores GICS (Energy, Materials, Industrials, etc.)
+3. companies         — Empresas mestres (ticker, nome, país, setor)
+4. assets            — Todos os ativos (stocks, índices, commodities, FX, cripto)
+5. trading_calendar  — Dias úteis/feriados por exchange
+6. prices_daily      — Preços históricos OHLCV (fato)
+7. financial_statements — DRE, balanço, FCF (fato)
+8. valuation_multiples  — P/E, P/B, EV/EBITDA, ROE, margens, etc.
+9. ingestion_log     — Log de ingestão (auditoria)
+
+═══════════════════════════════════════════════════════════════════════════
+
+📈 TICKERS DISPONÍVEIS (360 TOTAL)
+
+Ações:                ~303
+  - Brasil:   80 tickers (PETR3.SA, VALE3.SA, ITUB4.SA, BBDC4.SA, etc.)
+  - EUA:     120 tickers (AAPL, MSFT, GOOGL, AMZN, NVDA, META, TSLA, etc.)
+  - UK:       30 tickers (SHEL.L, AZN.L, HSBA.L, BP.L, etc.)
+  - Alemanha: 21 tickers (SAP.DE, SIE.DE, ALV.DE, etc.)
+  - França:   20 tickers (MC.PA, TTE.PA, AIR.PA, etc.)
+  - Holanda/Suíça: 20 tickers (ASML.AS, NESN.SW, etc.)
+  - Outros:   12 tickers
+
+Índices:             16
+  S&P 500, NASDAQ, Dow Jones, Ibovespa, FTSE 100, DAX, CAC 40, AEX,
+  Euro Stoxx 50, Nikkei 225, Hang Seng, Shanghai, ASX 200, TSX, VIX, Russell
+
+Commodities:        15
+  Ouro, Prata, Platina, WTI, Brent, Gás Natural, Gasolina, Milho, Soja,
+  Trigo, Café, Açúcar, Algodão, Cobre
+
+Câmbio (FX):        16
+  USD/BRL, EUR/BRL, EUR/USD, GBP/USD, USD/JPY, USDCHF, AUDUSD, USDCAD,
+  NZDUSD, EURGBP, EURJPY, GBPJPY, USDCNY, USDINR, USDMXN, DX-Y
+
+Criptomoedas:       10
+  BTC-USD, ETH-USD, BNB-USD, SOL-USD, XRP-USD, ADA-USD, DOGE-USD, AVAX-USD,
+  DOT-USD, MATIC-USD
+
+═══════════════════════════════════════════════════════════════════════════
+
+⚙️ SETUP RÁPIDO
+
+1. Ambiente virtual:
+   python -m venv venv && source venv/bin/activate
+
+2. Instalar dependências:
+   pip install -r backend/requirements.txt
+
+3. Configurar .env:
+   cp .env.example .env
+   # Editar com credenciais PostgreSQL ou usar SQLite
+
+4. Inicializar banco:
+   python -m backend.cli db-init
+
+5. Ingerir dados:
+   python -m backend.cli ingest-prices -p 90d
+
+6. Executar backend:
+   python -m backend.app
+
+7. Acessar API:
+   http://localhost:8000/docs (Swagger UI)
+   http://localhost:8000/redoc (ReDoc)
+
+═══════════════════════════════════════════════════════════════════════════
+
+✅ ARQUIVOS COPIADOS INTACTOS (NÃO MODIFICADOS)
+
+Esses arquivos foram COPIADOS BYTE A BYTE do market_platform:
+
+✅ config/symbols.py                 — 360 tickers
+✅ config/logging_config.py          — Logging rotativo 10MB
+✅ db/connection.py                  — Engine SQLAlchemy (PostgreSQL/SQLite)
+✅ db/schema.py                      — 9 tabelas ORM com índices
+✅ data/calendar.py                  — Calendário dias úteis
+✅ data/sectors_gics.py              — 34 setores + 12 países
+✅ ingestion/yf_client.py            — Cliente yfinance com rate-limit
+✅ ingestion/loader.py               — Pipeline ingestão preços
+✅ ingestion/fundamentals_loader.py  — Ingestão fundamentos
+✅ ingest_resumable.py               — SAGRADO! Ingestão com checkpoint
+
+═══════════════════════════════════════════════════════════════════════════
+
+⭐ NOVOS ARQUIVOS CRIADOS ESPECIFICAMENTE
+
+⭐ app.py                  — FastAPI app principal com CORS, lifecycle, error handlers
+⭐ cli.py                  — CLI completo para ingestão e gerenciamento
+⭐ config/settings.py      — Configurações centralizadas (pydantic-settings)
+⭐ api/router.py           — Agregador de routers
+⭐ api/models.py           — 30+ modelos Pydantic (requests/responses)
+⭐ api/assets.py           — 3 endpoints de ativos/busca
+⭐ api/prices.py           — 3 endpoints de preços históricos e retornos
+⭐ api/market.py           — 3 endpoints de mercado (índices, setores, países)
+⭐ api/fundamentals.py     — 2 endpoints de fundamentos e valuation
+⭐ api/ingestion.py        — 1 endpoint de status de ingestão
+⭐ backend/sql/useful_queries.sql — 10 queries SQL úteis
+⭐ .env.example            — Template de configuração
+⭐ BACKEND_README.md       — Documentação completa (setup, endpoints, troubleshooting)
+
+═══════════════════════════════════════════════════════════════════════════
+
+🔧 DEPENDÊNCIAS PRINCIPAIS
+
+Framework:
+  - fastapi>=0.110.0
+  - uvicorn>=0.25.0
+
+Data/Config:
+  - pydantic>=2.6.0
+  - pydantic-settings>=2.1.0
+  - python-dotenv>=1.0.0
+
+Banco de Dados:
+  - SQLAlchemy>=2.0.0
+  - psycopg2-binary>=2.9.9  (PostgreSQL)
+
+Dados Financeiros:
+  - yfinance>=0.2.40
+  - pandas>=2.0.0
+  - numpy>=1.26.0
+
+Utilitários:
+  - requests>=2.31.0
+  - requests-cache>=1.2.0
+  - holidays>=0.46
+
+═══════════════════════════════════════════════════════════════════════════
+
+📝 NOTAS IMPORTANTES
+
+1. PATHS
+   - Todos os imports usam relative imports dentro do pacote backend
+   - PYTHONPATH deve incluir: /sessions/.../market_platform_unified/
+
+2. INGESTÃO
+   - Rate-limit yfinance: 8 requisições/minuto
+   - Checkpoint em: backend/logs/checkpoint.txt
+   - Logs em: backend/logs/market_platform.log (rotativo 10MB)
+
+3. BANCO
+   - Suporta PostgreSQL (produção) e SQLite (desenvolvimento)
+   - Todas as 9 tabelas criadas automaticamente no startup
+
+4. CORS
+   - Configurável via .env (CORS_ORIGINS)
+   - Default: "*" (aceita qualquer origem)
+   - Para produção: especificar origens
+
+5. PERFORMANCE
+   - Índices em: symbol, asset_id, date, country_id, sector_id
+   - Constraints UNIQUE em: (asset_id, date), (company_id, period)
+   - Paginação: máx 100 itens/page
+
+═══════════════════════════════════════════════════════════════════════════
+
+✨ PRÓXIMAS ETAPAS
+
+1. ✅ Backend FastAPI — CONCLUÍDO
+2. ⏳ Frontend React (integrate com http://localhost:8000/api)
+3. ⏳ Cache Redis para preços frequentes
+4. ⏳ WebSocket para real-time updates
+5. ⏳ Alertas e notificações
+
+═══════════════════════════════════════════════════════════════════════════

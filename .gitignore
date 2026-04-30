@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+dist/
+build/
+venv/
+.venv/
+*.egg
+
+# Ambiente — NUNCA versionar
+.env
+*.log
+market_platform.log*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Dados locais
+*.db
+*.sqlite
+*.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+*.csv
+checkpoint_*.json
+exports/
+
+# Testes
+test_market.db
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Node (se frontend migrar para Vite)
+node_modules/
+
+# Nested — árvore separada com .git próprio (decisão ISSUE-001 pendente)
+backend/Global_Mkt_2.0/

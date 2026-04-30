@@ -1,0 +1,749 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Market Data Platform</title>
+    <link href="https://fonts.googleapis.com/css2?family=Chivo:wght@300;400;700;900&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <script>
+    tailwind.config = {
+        darkMode: 'class',
+        theme: {
+            extend: {
+                colors: {
+                    background: '#09090B',
+                    foreground: '#FAFAFA',
+                    card: '#18181B',
+                    'card-border': '#27272A',
+                    primary: '#22C55E',
+                    secondary: '#3B82F6',
+                    destructive: '#EF4444',
+                    muted: '#27272A',
+                    'muted-foreground': '#A1A1AA',
+                },
+                fontFamily: {
+                    heading: ['Chivo', 'sans-serif'],
+                    body: ['Manrope', 'sans-serif'],
+                    mono: ['JetBrains Mono', 'monospace'],
+                }
+            }
+        }
+    }
+    </script>
+    <style>
+        html, body { background: #09090B; color: #FAFAFA; font-family: 'Manrope', sans-serif; margin: 0; padding: 0; }
+        .font-heading { font-family: 'Chivo', sans-serif; }
+        .font-mono { font-family: 'JetBrains Mono', monospace; }
+        .card-style { background: #18181B; border: 1px solid #27272A; border-radius: 0.5rem; transition: border-color 0.2s; }
+        .card-style:hover { border-color: rgba(34, 197, 94, 0.3); }
+        .text-positive { color: #22C55E; }
+        .text-negative { color: #EF4444; }
+        .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+        .scrollbar-thin::-webkit-scrollbar-track { background: #18181B; }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background: #3F3F46; border-radius: 3px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .animate-spin { animation: spin 1s linear infinite; }
+    </style>
+</head>
+<body class="bg-background text-foreground">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useCallback } = React;
+
+        // ============================================
+        // CONFIG
+        // ============================================
+        const API_BASE = window.location.protocol === 'file:'
+            ? 'http://localhost:8000/api'
+            : (window.location.port === '8000' ? '/api' : 'http://localhost:8000/api');
+
+        // ============================================
+        // ÍCONES SVG INLINE
+        // ============================================
+        const Icon = ({ d, size = 20, className = '' }) => (
+            <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+                <path d={d} />
+            </svg>
+        );
+        const Icons = {
+            Home: (p) => <Icon {...p} d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z M9 22V12h6v10" />,
+            Search: (p) => <Icon {...p} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />,
+            TrendUp: (p) => <Icon {...p} d="M23 6l-9.5 9.5-5-5L1 18" />,
+            TrendDown: (p) => <Icon {...p} d="M23 18l-9.5-9.5-5 5L1 6" />,
+            Briefcase: (p) => <Icon {...p} d="M20 7H4a2 2 0 00-2 2v10a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2z M16 21V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v16" />,
+            Activity: (p) => <Icon {...p} d="M22 12h-4l-3 9L9 3l-3 9H2" />,
+            Menu: (p) => <Icon {...p} d="M3 12h18M3 6h18M3 18h18" />,
+            X: (p) => <Icon {...p} d="M18 6L6 18M6 6l12 12" />,
+            ChevronRight: (p) => <Icon {...p} d="M9 18l6-6-6-6" />,
+            ArrowLeft: (p) => <Icon {...p} d="M19 12H5M12 19l-7-7 7-7" />,
+            Database: (p) => <Icon {...p} d="M12 2C6.48 2 2 4.02 2 6.5v11C2 19.98 6.48 22 12 22s10-2.02 10-4.5v-11C22 4.02 17.52 2 12 2z" />,
+        };
+
+        // ============================================
+        // COMPONENTES REUTILIZÁVEIS
+        // ============================================
+        const PriceChange = ({ value, showIcon = true }) => {
+            if (value === null || value === undefined) return <span className="text-muted-foreground font-mono text-sm">--</span>;
+            const isPositive = value >= 0;
+            return (
+                <span className={`font-mono text-sm font-medium inline-flex items-center gap-1 ${isPositive ? 'text-positive' : 'text-negative'}`}>
+                    {showIcon && (isPositive ? <Icons.TrendUp size={14} /> : <Icons.TrendDown size={14} />)}
+                    {isPositive ? '+' : ''}{Number(value).toFixed(2)}%
+                </span>
+            );
+        };
+
+        const Fmt = ({ value, decimals = 2, prefix = '', suffix = '' }) => {
+            if (value === null || value === undefined) return <span className="text-muted-foreground">--</span>;
+            const n = typeof value === 'number'
+                ? value.toLocaleString('pt-BR', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
+                : value;
+            return <span className="font-mono">{prefix}{n}{suffix}</span>;
+        };
+
+        const Card = ({ children, className = '', onClick }) => (
+            <div className={`card-style p-4 sm:p-5 ${onClick ? 'cursor-pointer' : ''} ${className}`} onClick={onClick}>
+                {children}
+            </div>
+        );
+
+        const Loading = () => (
+            <div className="flex items-center justify-center p-12">
+                <div className="animate-spin h-8 w-8 border-2 border-primary border-t-transparent rounded-full"></div>
+            </div>
+        );
+
+        const Empty = ({ title, desc }) => (
+            <div className="flex flex-col items-center justify-center p-12 text-center">
+                <Icons.Database size={32} className="text-muted-foreground mb-3" />
+                <p className="text-muted-foreground text-sm font-medium">{title}</p>
+                <p className="text-muted-foreground text-xs mt-1">{desc}</p>
+            </div>
+        );
+
+        const Table = ({ columns, data }) => {
+            if (!data || data.length === 0) return <Empty title="Nenhum dado" desc="Nenhum registro encontrado" />;
+            return (
+                <div className="overflow-x-auto scrollbar-thin">
+                    <table className="w-full text-sm">
+                        <thead>
+                            <tr className="border-b border-card-border">
+                                {columns.map(c => (
+                                    <th key={c.key} className="text-left p-3 font-heading font-semibold text-muted-foreground text-xs uppercase tracking-wider">{c.label}</th>
+                                ))}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {data.map((row, i) => (
+                                <tr key={i} className="border-b border-card-border/50 hover:bg-white/[0.02] transition-colors">
+                                    {columns.map(c => (
+                                        <td key={c.key} className="p-3">{c.render ? c.render(row) : row[c.key]}</td>
+                                    ))}
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            );
+        };
+
+        // Mini bar chart (CSS puro, sem Recharts)
+        const MiniBarChart = ({ data, dataKey, labelKey, height = 200 }) => {
+            if (!data || data.length === 0) return null;
+            const vals = data.map(d => d[dataKey] || 0);
+            const maxVal = Math.max(...vals.map(Math.abs), 1);
+            return (
+                <div className="flex items-end gap-1 overflow-x-auto scrollbar-thin pb-2" style={{ height }}>
+                    {data.map((d, i) => {
+                        const v = d[dataKey] || 0;
+                        const h = Math.abs(v) / maxVal * (height - 40);
+                        const color = v >= 0 ? '#22C55E' : '#EF4444';
+                        return (
+                            <div key={i} className="flex flex-col items-center justify-end flex-shrink-0" style={{ minWidth: 28 }}>
+                                <span className="text-[10px] font-mono text-muted-foreground mb-1">{v.toFixed(1)}</span>
+                                <div style={{ height: Math.max(h, 2), backgroundColor: color, width: 20, borderRadius: '4px 4px 0 0' }}></div>
+                                <span className="text-[9px] text-muted-foreground mt-1 truncate max-w-[28px]" title={d[labelKey]}>{(d[labelKey] || '').slice(0, 4)}</span>
+                            </div>
+                        );
+                    })}
+                </div>
+            );
+        };
+
+        // Mini line chart (SVG puro)
+        const MiniLineChart = ({ data, dataKey, height = 200, width = '100%' }) => {
+            if (!data || data.length < 2) return <Empty title="Sem dados" desc="Poucos pontos para gráfico" />;
+            const vals = data.map(d => d[dataKey] || 0);
+            const min = Math.min(...vals);
+            const max = Math.max(...vals);
+            const range = max - min || 1;
+            const W = 800;
+            const H = height - 20;
+            const points = vals.map((v, i) => {
+                const x = (i / (vals.length - 1)) * W;
+                const y = H - ((v - min) / range) * (H - 20) + 10;
+                return `${x},${y}`;
+            });
+            const areaPoints = `0,${H} ${points.join(' ')} ${W},${H}`;
+            return (
+                <svg viewBox={`0 0 ${W} ${H + 10}`} style={{ width, height }} preserveAspectRatio="none">
+                    <defs>
+                        <linearGradient id="lineGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#22C55E" stopOpacity="0.3" />
+                            <stop offset="100%" stopColor="#22C55E" stopOpacity="0" />
+                        </linearGradient>
+                    </defs>
+                    <polygon points={areaPoints} fill="url(#lineGrad)" />
+                    <polyline points={points.join(' ')} fill="none" stroke="#22C55E" strokeWidth="2" vectorEffect="non-scaling-stroke" />
+                </svg>
+            );
+        };
+
+        // ============================================
+        // FETCH HELPER
+        // ============================================
+        const apiFetch = async (path) => {
+            const r = await fetch(`${API_BASE}${path}`);
+            if (!r.ok) throw new Error(`${r.status}`);
+            return r.json();
+        };
+
+        // ============================================
+        // HELPERS: conversão de período UI → API
+        // ============================================
+        const periodMap = { '1S': '7d', '1M': '30d', '3M': '90d', '6M': '180d', '1A': '365d' };
+
+        // ============================================
+        // PÁGINA: DASHBOARD
+        // ============================================
+        const Dashboard = ({ onNavigate }) => {
+            const [prices, setPrices] = useState([]);
+            const [sectors, setSectors] = useState([]);
+            const [query, setQuery] = useState('');
+            const [results, setResults] = useState([]);
+            const [filter, setFilter] = useState('all');
+            const [loading, setLoading] = useState(true);
+
+            useEffect(() => {
+                Promise.all([
+                    apiFetch('/prices').catch(() => ({ prices: [] })),
+                    apiFetch('/market/sectors').catch(() => ({ sectors: [] })),
+                ]).then(([p, s]) => {
+                    // API retorna {prices: [...]} com campos: symbol, name, close, change_pct
+                    const priceList = (p.prices || []).map(item => ({
+                        ...item,
+                        last_price: item.close,
+                        price_change_percent: item.change_pct,
+                    }));
+                    setPrices(priceList);
+                    // API retorna {sectors: [...]} com campo avg_return_pct
+                    const sectorList = (s.sectors || []).map(item => ({
+                        ...item,
+                        avg_performance: item.avg_return_pct,
+                    }));
+                    setSectors(sectorList);
+                    setLoading(false);
+                });
+            }, []);
+
+            const search = async (q) => {
+                setQuery(q);
+                if (q.length >= 1) {
+                    try {
+                        const data = await apiFetch(`/assets/search?q=${encodeURIComponent(q)}`);
+                        // API retorna {assets: [...]}
+                        setResults((data.assets || []).slice(0, 6));
+                    } catch { setResults([]); }
+                } else { setResults([]); }
+            };
+
+            const filtered = filter === 'all' ? prices : prices.filter(p => p.asset_type === filter);
+
+            if (loading) return <Loading />;
+
+            return (
+                <div className="space-y-6">
+                    <div>
+                        <h1 className="font-heading text-3xl font-bold">Dashboard</h1>
+                        <p className="text-muted-foreground text-sm mt-1">Visão geral de ~600 ativos globais</p>
+                    </div>
+
+                    {/* Search */}
+                    <div className="relative">
+                        <div className="relative">
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"><Icons.Search size={16} /></span>
+                            <input type="text" value={query} onChange={e => search(e.target.value)}
+                                placeholder="Buscar símbolo ou empresa..."
+                                className="w-full pl-10 pr-4 py-2.5 bg-muted rounded-lg border border-card-border focus:border-primary focus:outline-none text-foreground placeholder-muted-foreground text-sm" />
+                        </div>
+                        {results.length > 0 && (
+                            <div className="absolute top-full left-0 right-0 mt-1 bg-card border border-card-border rounded-lg shadow-2xl z-50 overflow-hidden">
+                                {results.map(r => (
+                                    <a key={r.symbol} href={`#/symbol/${r.symbol}`} onClick={() => { setQuery(''); setResults([]); }}
+                                        className="flex items-center justify-between px-4 py-3 hover:bg-white/[0.03] border-b border-card-border/50 last:border-0">
+                                        <div>
+                                            <span className="font-heading font-bold text-sm">{r.symbol}</span>
+                                            <span className="text-muted-foreground text-xs ml-2">{r.name}</span>
+                                        </div>
+                                        <Icons.ChevronRight size={14} className="text-muted-foreground" />
+                                    </a>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Filtros */}
+                    <div className="flex gap-2 flex-wrap">
+                        {['all', 'stock', 'index', 'commodity', 'fx', 'crypto'].map(t => (
+                            <button key={t} onClick={() => setFilter(t)}
+                                className={`px-4 py-1.5 rounded-lg font-medium text-xs transition-colors ${filter === t ? 'bg-primary text-black' : 'bg-muted text-muted-foreground hover:text-foreground'}`}>
+                                {t === 'all' ? 'Todos' : t.charAt(0).toUpperCase() + t.slice(1)}
+                            </button>
+                        ))}
+                    </div>
+
+                    {/* Grid de preços */}
+                    <div>
+                        <h2 className="font-heading text-lg font-bold mb-3">Últimos Preços</h2>
+                        {filtered.length === 0 ? (
+                            <Empty title="Nenhum ativo encontrado" desc="Execute a ingestão: python -m backend.cli ingest-prices" />
+                        ) : (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                                {filtered.slice(0, 20).map(p => (
+                                    <a key={p.symbol} href={`#/symbol/${p.symbol}`}
+                                        className="card-style p-4 hover:border-primary/50 block">
+                                        <div className="flex items-start justify-between mb-2">
+                                            <div>
+                                                <p className="font-heading font-bold">{p.symbol}</p>
+                                                <p className="text-muted-foreground text-xs truncate max-w-[140px]">{p.name || ''}</p>
+                                            </div>
+                                            <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded text-muted-foreground">{p.asset_type}</span>
+                                        </div>
+                                        <div className="flex items-end justify-between">
+                                            <span className="font-mono font-semibold text-lg">
+                                                {(p.last_price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                            </span>
+                                            <PriceChange value={p.price_change_percent} showIcon={false} />
+                                        </div>
+                                    </a>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Setores */}
+                    {sectors.length > 0 && (
+                        <div>
+                            <h2 className="font-heading text-lg font-bold mb-3">Performance por Setor</h2>
+                            <Card>
+                                <MiniBarChart data={sectors.slice(0, 15)} dataKey="avg_performance" labelKey="sector" height={220} />
+                            </Card>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        // ============================================
+        // PÁGINA: DETALHE DO SÍMBOLO
+        // ============================================
+        const SymbolDetail = ({ symbol }) => {
+            const [details, setDetails] = useState(null);
+            const [history, setHistory] = useState([]);
+            const [fundamentals, setFundamentals] = useState(null);
+            const [valuation, setValuation] = useState(null);
+            const [period, setPeriod] = useState('3M');
+            const [loading, setLoading] = useState(true);
+            const [histLoading, setHistLoading] = useState(true);
+
+            useEffect(() => {
+                setLoading(true);
+                // API: GET /assets/{symbol} → {symbol, name, asset_type, ...}
+                apiFetch(`/assets/${symbol}`).then(d => {
+                    setDetails(d);
+                    setLoading(false);
+                }).catch(() => {
+                    // fallback: tenta busca
+                    apiFetch(`/assets/search?q=${symbol}`).then(d => {
+                        if (d.assets && d.assets.length > 0) setDetails(d.assets[0]);
+                        setLoading(false);
+                    }).catch(() => setLoading(false));
+                });
+
+                // API: GET /fundamentals/{symbol} → {symbol, company_name, quarters: [...]}
+                apiFetch(`/fundamentals/${symbol}`).then(d => {
+                    if (d.quarters && d.quarters.length > 0) {
+                        // Pega o trimestre mais recente
+                        setFundamentals(d.quarters[0]);
+                    }
+                }).catch(() => {});
+
+                // API: GET /fundamentals/{symbol}/valuation → {symbol, company_name, multiples: {...}}
+                apiFetch(`/fundamentals/${symbol}/valuation`).then(d => {
+                    if (d.multiples) setValuation(d.multiples);
+                }).catch(() => {});
+            }, [symbol]);
+
+            useEffect(() => {
+                setHistLoading(true);
+                const apiPeriod = periodMap[period] || '90d';
+                // API: GET /prices/{symbol}/history?period=90d → {prices: [...]}
+                apiFetch(`/prices/${symbol}/history?period=${apiPeriod}`)
+                    .then(d => { setHistory(d.prices || []); setHistLoading(false); })
+                    .catch(() => { setHistory([]); setHistLoading(false); });
+            }, [symbol, period]);
+
+            if (loading) return <Loading />;
+            if (!details) return <Empty title="Ativo não encontrado" desc={symbol} />;
+
+            const lastPrice = history.length > 0 ? history[history.length - 1] : null;
+            const firstPrice = history.length > 0 ? history[0] : null;
+            const priceChange = (lastPrice && firstPrice && firstPrice.close)
+                ? ((lastPrice.close - firstPrice.close) / firstPrice.close * 100) : null;
+
+            return (
+                <div className="space-y-6">
+                    <a href="#/" className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground text-sm">
+                        <Icons.ArrowLeft size={16} /> Voltar
+                    </a>
+
+                    <div className="flex items-start justify-between">
+                        <div>
+                            <h1 className="font-heading text-3xl font-bold">{details.symbol}</h1>
+                            <p className="text-muted-foreground text-sm">{details.name}</p>
+                        </div>
+                        <span className="text-xs bg-muted px-2 py-1 rounded text-muted-foreground">{details.asset_type || details.type}</span>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        <Card>
+                            <p className="text-muted-foreground text-xs mb-1">Último Preço</p>
+                            <p className="font-mono text-xl font-bold">
+                                <Fmt value={lastPrice?.close} decimals={2} />
+                            </p>
+                        </Card>
+                        <Card>
+                            <p className="text-muted-foreground text-xs mb-1">Variação ({period})</p>
+                            <PriceChange value={priceChange} />
+                        </Card>
+                        <Card>
+                            <p className="text-muted-foreground text-xs mb-1">Máxima</p>
+                            <p className="font-mono font-semibold"><Fmt value={lastPrice?.high} decimals={2} /></p>
+                        </Card>
+                        <Card>
+                            <p className="text-muted-foreground text-xs mb-1">Volume</p>
+                            <p className="font-mono font-semibold"><Fmt value={lastPrice?.volume} decimals={0} /></p>
+                        </Card>
+                    </div>
+
+                    {/* Gráfico de Preço */}
+                    <Card>
+                        <div className="flex items-center justify-between mb-4">
+                            <h2 className="font-heading text-lg font-bold">Preço Histórico</h2>
+                            <div className="flex gap-1">
+                                {['1S', '1M', '3M', '6M', '1A'].map(p => (
+                                    <button key={p} onClick={() => setPeriod(p)}
+                                        className={`px-3 py-1 text-xs rounded-md font-medium transition-colors ${period === p ? 'bg-primary text-black' : 'bg-muted text-muted-foreground hover:text-foreground'}`}>
+                                        {p}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                        {histLoading ? <Loading /> : (
+                            <MiniLineChart data={history} dataKey="close" height={250} />
+                        )}
+                    </Card>
+
+                    {/* Retorno Diário */}
+                    {history.length > 0 && history[0].daily_return !== undefined && (
+                        <Card>
+                            <h2 className="font-heading text-lg font-bold mb-4">Retorno Diário</h2>
+                            <MiniBarChart data={history.slice(-30)} dataKey="daily_return" labelKey="date" height={180} />
+                        </Card>
+                    )}
+
+                    {/* Tabela OHLCV */}
+                    {history.length > 0 && (
+                        <Card>
+                            <h2 className="font-heading text-lg font-bold mb-4">OHLCV (últimos 10 dias)</h2>
+                            <Table columns={[
+                                { key: 'date', label: 'Data' },
+                                { key: 'open', label: 'Abertura', render: r => <Fmt value={r.open} decimals={2} /> },
+                                { key: 'high', label: 'Máxima', render: r => <Fmt value={r.high} decimals={2} /> },
+                                { key: 'low', label: 'Mínima', render: r => <Fmt value={r.low} decimals={2} /> },
+                                { key: 'close', label: 'Fechamento', render: r => <Fmt value={r.close} decimals={2} /> },
+                                { key: 'volume', label: 'Volume', render: r => <Fmt value={r.volume} decimals={0} /> },
+                            ]} data={history.slice(-10).reverse()} />
+                        </Card>
+                    )}
+
+                    {/* Fundamentos */}
+                    {fundamentals && !fundamentals.detail && (
+                        <Card>
+                            <h2 className="font-heading text-lg font-bold mb-4">Fundamentos</h2>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                                {[
+                                    ['Receita', fundamentals.revenue, 'M'],
+                                    ['EBITDA', fundamentals.ebitda, 'M'],
+                                    ['Lucro Líquido', fundamentals.net_income, 'M'],
+                                ].map(([label, val, suffix]) => (
+                                    <div key={label}>
+                                        <p className="text-muted-foreground text-xs mb-1">{label}</p>
+                                        <p className="font-mono font-semibold"><Fmt value={val} decimals={0} suffix={suffix} /></p>
+                                    </div>
+                                ))}
+                            </div>
+                        </Card>
+                    )}
+
+                    {/* Valuation */}
+                    {valuation && !valuation.detail && (
+                        <Card>
+                            <h2 className="font-heading text-lg font-bold mb-4">Múltiplos</h2>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                                {[
+                                    ['P/L', valuation.pe_ratio, ''],
+                                    ['P/VP', valuation.pb_ratio, ''],
+                                    ['EV/EBITDA', valuation.ev_ebitda, ''],
+                                    ['ROE', valuation.roe, '%'],
+                                    ['Div Yield', valuation.dividend_yield, '%'],
+                                ].map(([label, val, suffix]) => (
+                                    <div key={label}>
+                                        <p className="text-muted-foreground text-xs mb-1">{label}</p>
+                                        <p className="font-mono font-semibold"><Fmt value={val} decimals={2} suffix={suffix} /></p>
+                                    </div>
+                                ))}
+                            </div>
+                        </Card>
+                    )}
+                </div>
+            );
+        };
+
+        // ============================================
+        // PÁGINA: SETORES GICS
+        // ============================================
+        const SectorsPage = () => {
+            const [sectors, setSectors] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [country, setCountry] = useState('all');
+
+            useEffect(() => {
+                apiFetch('/market/sectors').then(d => {
+                    // API retorna {sectors: [{sector, sector_pt, avg_return_pct, asset_count, period}]}
+                    const list = (d.sectors || []).map(s => ({
+                        ...s,
+                        avg_performance: s.avg_return_pct,
+                    }));
+                    setSectors(list);
+                    setLoading(false);
+                }).catch(() => setLoading(false));
+            }, []);
+
+            const countries = [...new Set(sectors.map(s => s.country).filter(Boolean))].sort();
+            const filtered = country === 'all' ? sectors : sectors.filter(s => s.country === country);
+
+            if (loading) return <Loading />;
+
+            return (
+                <div className="space-y-6">
+                    <div>
+                        <h1 className="font-heading text-3xl font-bold">Setores GICS</h1>
+                        <p className="text-muted-foreground text-sm mt-1">Múltiplos médios por setor e país</p>
+                    </div>
+
+                    {countries.length > 0 && (
+                        <div className="flex gap-2 flex-wrap">
+                            <button onClick={() => setCountry('all')}
+                                className={`px-4 py-1.5 rounded-lg font-medium text-xs transition-colors ${country === 'all' ? 'bg-primary text-black' : 'bg-muted text-muted-foreground hover:text-foreground'}`}>
+                                Todos
+                            </button>
+                            {countries.map(c => (
+                                <button key={c} onClick={() => setCountry(c)}
+                                    className={`px-4 py-1.5 rounded-lg font-medium text-xs transition-colors ${country === c ? 'bg-primary text-black' : 'bg-muted text-muted-foreground hover:text-foreground'}`}>
+                                    {c}
+                                </button>
+                            ))}
+                        </div>
+                    )}
+
+                    {filtered.length === 0 ? (
+                        <Empty title="Nenhum setor" desc="Execute a ingestão de dados" />
+                    ) : (
+                        <>
+                            <Card>
+                                <Table columns={[
+                                    { key: 'sector_pt', label: 'Setor', render: r => r.sector_pt || r.sector },
+                                    { key: 'asset_count', label: 'Ativos', render: r => <Fmt value={r.asset_count} decimals={0} /> },
+                                    { key: 'avg_performance', label: 'Retorno Médio', render: r => <PriceChange value={r.avg_performance} showIcon={false} /> },
+                                    { key: 'period', label: 'Período' },
+                                ]} data={filtered} />
+                            </Card>
+                            <Card>
+                                <h2 className="font-heading text-lg font-bold mb-4">Performance por Setor</h2>
+                                <MiniBarChart data={filtered.slice(0, 20)} dataKey="avg_performance" labelKey="sector" height={220} />
+                            </Card>
+                        </>
+                    )}
+                </div>
+            );
+        };
+
+        // ============================================
+        // PÁGINA: STATUS DA INGESTÃO
+        // ============================================
+        const IngestionPage = () => {
+            const [status, setStatus] = useState(null);
+            const [loading, setLoading] = useState(true);
+
+            useEffect(() => {
+                apiFetch('/ingestion/status').then(d => {
+                    setStatus(d);
+                    setLoading(false);
+                }).catch(() => setLoading(false));
+            }, []);
+
+            if (loading) return <Loading />;
+            if (!status) return <Empty title="Dados indisponíveis" desc="Não foi possível consultar o status" />;
+
+            // API retorna: {total_assets, success_count, error_count, recent_logs: [...], last_update}
+            const total = (status.success_count || 0) + (status.error_count || 0);
+            const pct = total > 0
+                ? ((status.success_count || 0) / total * 100).toFixed(1)
+                : 0;
+
+            return (
+                <div className="space-y-6">
+                    <div>
+                        <h1 className="font-heading text-3xl font-bold">Ingestão</h1>
+                        <p className="text-muted-foreground text-sm mt-1">Status do pipeline de dados</p>
+                    </div>
+
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                        {[
+                            ['Total de Ativos', status.total_assets, ''],
+                            ['Total Ingestões', total, ''],
+                            ['Sucessos', status.success_count, 'text-positive'],
+                            ['Erros', status.error_count, 'text-negative'],
+                        ].map(([label, val, cls]) => (
+                            <Card key={label}>
+                                <p className="text-muted-foreground text-xs mb-2">{label}</p>
+                                <p className={`font-mono text-2xl font-bold ${cls}`}>{(val || 0).toLocaleString('pt-BR')}</p>
+                            </Card>
+                        ))}
+                    </div>
+
+                    <Card>
+                        <div className="flex justify-between mb-2">
+                            <span className="font-heading font-semibold text-sm">Taxa de Sucesso</span>
+                            <span className="font-mono font-semibold text-sm">{pct}%</span>
+                        </div>
+                        <div className="w-full bg-muted rounded-full h-3">
+                            <div className="bg-primary h-3 rounded-full transition-all duration-500" style={{ width: `${pct}%` }}></div>
+                        </div>
+                    </Card>
+
+                    {status.recent_logs && status.recent_logs.length > 0 && (
+                        <Card>
+                            <h2 className="font-heading text-lg font-bold mb-4">Últimas Execuções</h2>
+                            <Table columns={[
+                                { key: 'symbol', label: 'Símbolo' },
+                                { key: 'started_at', label: 'Início', render: r => <span className="text-xs">{r.started_at?.slice(0, 16)}</span> },
+                                { key: 'status', label: 'Status', render: r => (
+                                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                                        r.status === 'success' ? 'bg-green-500/20 text-positive'
+                                        : r.status === 'error' ? 'bg-red-500/20 text-negative'
+                                        : 'bg-yellow-500/20 text-yellow-400'
+                                    }`}>{r.status}</span>
+                                )},
+                                { key: 'rows_inserted', label: 'Linhas', render: r => <Fmt value={r.rows_inserted} decimals={0} /> },
+                            ]} data={status.recent_logs.slice(0, 15)} />
+                        </Card>
+                    )}
+                </div>
+            );
+        };
+
+        // ============================================
+        // SIDEBAR & LAYOUT
+        // ============================================
+        const Sidebar = ({ page, mobileOpen, closeMobile }) => {
+            const items = [
+                { id: '/', label: 'Dashboard', icon: Icons.Home },
+                { id: '/sectors', label: 'Setores', icon: Icons.Briefcase },
+                { id: '/ingestion', label: 'Ingestão', icon: Icons.Activity },
+            ];
+            return (
+                <>
+                    {mobileOpen && <div className="fixed inset-0 bg-black/60 z-40 md:hidden" onClick={closeMobile}></div>}
+                    <aside className={`fixed md:static w-60 h-screen bg-card border-r border-card-border flex flex-col z-50 transition-transform md:translate-x-0 ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+                        <div className="p-5 flex items-center justify-between border-b border-card-border">
+                            <span className="font-heading font-bold text-base tracking-wider">MARKET DATA</span>
+                            <button className="md:hidden text-muted-foreground" onClick={closeMobile}><Icons.X size={18} /></button>
+                        </div>
+                        <nav className="flex-1 p-3 space-y-1">
+                            {items.map(it => {
+                                const active = page === it.id;
+                                return (
+                                    <a key={it.id} href={`#${it.id}`} onClick={closeMobile}
+                                        className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${active ? 'bg-primary/15 text-primary font-semibold' : 'text-muted-foreground hover:text-foreground hover:bg-white/[0.03]'}`}>
+                                        <it.icon size={18} />
+                                        {it.label}
+                                    </a>
+                                );
+                            })}
+                        </nav>
+                        <div className="p-4 border-t border-card-border text-[11px] text-muted-foreground">
+                            Market Data Platform v1.0
+                        </div>
+                    </aside>
+                </>
+            );
+        };
+
+        const App = () => {
+            const [page, setPage] = useState(window.location.hash.slice(1) || '/');
+            const [mob, setMob] = useState(false);
+
+            useEffect(() => {
+                const h = () => { setPage(window.location.hash.slice(1) || '/'); setMob(false); };
+                window.addEventListener('hashchange', h);
+                return () => window.removeEventListener('hashchange', h);
+            }, []);
+
+            const symbolMatch = page.match(/^\/symbol\/(.+)$/);
+            let content;
+            if (page === '/' || page === '') content = <Dashboard />;
+            else if (symbolMatch) content = <SymbolDetail symbol={symbolMatch[1]} />;
+            else if (page === '/sectors') content = <SectorsPage />;
+            else if (page === '/ingestion') content = <IngestionPage />;
+            else content = <Dashboard />;
+
+            return (
+                <div className="flex h-screen">
+                    <Sidebar page={page} mobileOpen={mob} closeMobile={() => setMob(false)} />
+                    <div className="flex-1 flex flex-col overflow-hidden">
+                        <header className="h-14 flex items-center px-4 border-b border-card-border flex-shrink-0">
+                            <button className="md:hidden mr-3 text-muted-foreground" onClick={() => setMob(true)}><Icons.Menu size={20} /></button>
+                            <span className="font-heading text-sm text-muted-foreground">Inteligência de Mercado</span>
+                        </header>
+                        <main className="flex-1 overflow-auto p-4 sm:p-6">
+                            <div className="max-w-6xl">{content}</div>
+                        </main>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
