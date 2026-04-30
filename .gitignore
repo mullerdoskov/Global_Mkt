@@ -17,6 +17,10 @@ market_platform.log*
 # Logs do agendamento (ISSUE-015)
 logs/scheduler/
 
+# Logs e dumps de backup (ISSUE-023)
+logs/backups/
+backups/
+
 # IDE
 .vscode/
 .idea/

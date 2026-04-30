@@ -379,6 +379,110 @@ crontab -e
 Para um dia migrar para um orquestrador (Prefect/Dagster), o módulo
 Python já é o ponto de entrada — basta envolvê-lo numa flow/job.
 
+## Backups do PostgreSQL
+
+A partir de ISSUE-023, o PostgreSQL é backupeado **semanalmente** via
+`pg_dump`, disparado pelo Windows Task Scheduler ou cron usando
+wrappers em `scripts/`. Diferente do agendamento (ISSUE-015), aqui não
+há módulo Python — `pg_dump` faz o trabalho e os scripts só fazem
+environment setup.
+
+### Pré-requisitos
+
+- `pg_dump` no PATH. Em Windows: `winget install PostgreSQL.PostgreSQL`.
+  Em Linux: `apt install postgresql-client`.
+- `MARKET_DB_URL` apontando para PostgreSQL. URLs `sqlite:` são
+  rejeitadas (use cópia de filesystem para SQLite).
+
+### Quem chama o quê
+
+```
+Windows Task Scheduler  ──►  scripts/backup_postgres.ps1
+cron / WSL              ──►  scripts/backup_postgres.sh
+                                    │
+                                    │ carrega .env, valida URL,
+                                    │ pg_dump -Fc -f <dump>,
+                                    │ purge mtime > BACKUP_RETENTION_DAYS
+                                    ▼
+                       backups/postgres/market_db_<UTC>.dump
+                       logs/backups/backup_<UTC>.log
+```
+
+### Exit codes
+
+| Código | Significado |
+|---|---|
+| `0` | Dump OK e retenção concluída |
+| `1` | Falha hard (pg_dump não no PATH, URL ausente / sqlite, dump não-zero) |
+| `2` | Dump OK mas retenção gerou warnings (ex.: arquivo bloqueado) |
+
+### Configuração
+
+| Env / flag | Default | Descrição |
+|---|---|---|
+| `BACKUP_DIR` | `<repo>/backups/postgres/` | Onde salvar os `.dump` |
+| `BACKUP_RETENTION_DAYS` | `90` | Idade max em dias antes de purgar |
+| `BACKUP_LOG_DIR` | `<repo>/logs/backups/` | Onde escrever logs do wrapper |
+
+### Rodar manualmente
+
+```powershell
+# Windows
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\backup_postgres.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\backup_postgres.ps1 -RetentionDays 180
+```
+
+```bash
+# Linux / WSL
+./scripts/backup_postgres.sh
+./scripts/backup_postgres.sh --retention-days 180
+```
+
+### Agendar no Windows Task Scheduler
+
+```powershell
+cd <repo>\scripts
+.\Register-BackupTask.ps1                   # domingo 03:00, retenção 90
+.\Register-BackupTask.ps1 -At "04:00" -RetentionDays 180
+.\Register-BackupTask.ps1 -DayOfWeek Saturday
+```
+
+Idempotente. Verificar:
+
+```powershell
+Get-ScheduledTask -TaskName "MDP Postgres Backup" | Format-List *
+Unregister-ScheduledTask -TaskName "MDP Postgres Backup" -Confirm:$false
+```
+
+### Agendar no Linux / cron
+
+```bash
+chmod +x <repo>/scripts/backup_postgres.sh
+crontab -e
+# Domingo 03:00 hora local
+0 3 * * 0 /caminho/para/<repo>/scripts/backup_postgres.sh >> /var/log/mdp_backup.log 2>&1
+```
+
+### Restaurar de um dump
+
+`pg_dump -Fc` gera formato custom; restaure com `pg_restore`:
+
+```bash
+# Restore completo num DB vazio
+pg_restore --dbname="postgresql://user:pass@host:5432/market_db_restore" \
+           --clean --if-exists \
+           backups/postgres/market_db_2026-04-30T030000Z.dump
+
+# Restore parcial (apenas uma tabela)
+pg_restore --dbname="..." --table=prices_daily \
+           backups/postgres/market_db_2026-04-30T030000Z.dump
+```
+
+> **Off-host não está incluído.** O backup mora no mesmo disco do
+> servidor. Falha de hardware leva o dump junto. Próxima evolução
+> natural: `aws s3 cp` / `rclone copy` no fim do wrapper. Issue
+> dedicada quando o requisito for formal.
+
 ## OS 12 ENDPOINTS REST
 
 ### 1. Assets (`/api/assets`)
