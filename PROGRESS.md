@@ -29,7 +29,7 @@ Ordem = prioridade de execução. Marcações:
 
 ## Sprint 2 — Continuidade do briefing
 
-- [x] ISSUE-015 — Agendamento incremental — PR pendente, 2026-04-30
+- [x] ISSUE-015 — Agendamento incremental — PR #11, 2026-04-30 (https://github.com/mullerdoskov/Global_Mkt/pull/11)
 - [ ] ISSUE-016 — Adicionar ativos asiáticos (JP/AU/HK)
 - [ ] ISSUE-017 — Endpoint `/api/export/{symbol}.csv`
 - [ ] ISSUE-018 — Watchlist persistente (DB)
