@@ -149,12 +149,33 @@ class TestHealthAndRoot:
         assert "version" in data
         assert "database" in data
 
-    def test_root_retorna_200(self):
+    def test_root_serve_index_html(self):
+        # ISSUE-007: "/" agora é servido pelo StaticFiles montado, devolvendo
+        # o `frontend/index.html` (e não mais JSON com info da API).
         r = client.get("/")
+        assert r.status_code == 200
+        assert r.headers["content-type"].startswith("text/html")
+        body = r.text
+        assert "<!DOCTYPE html>" in body
+        # Sentinela ancorada no SPA real, evita falso positivo de qualquer html.
+        assert "Market Platform" in body or 'lang="pt-BR"' in body
+
+    def test_static_file_acessivel(self):
+        # ISSUE-007: arquivos do diretório frontend/ devem ser servíveis sob /.
+        # Usamos MANIFEST.txt (presente em frontend/) como amostra estável.
+        r = client.get("/MANIFEST.txt")
+        assert r.status_code == 200
+        # Conteúdo é texto puro; checamos só que não veio HTML (404 fallback).
+        assert not r.text.lstrip().startswith("<!DOCTYPE")
+
+    def test_api_info_retorna_json(self):
+        # ISSUE-007: o antigo "/" (JSON com info) foi movido para /api/info.
+        r = client.get("/api/info")
         assert r.status_code == 200
         data = r.json()
         assert data["name"] == "Market Platform Unified"
         assert "api_prefix" in data
+        assert data["api_prefix"] == "/api"
 
 
 # ════════════════════════════════════════════════════════════════════

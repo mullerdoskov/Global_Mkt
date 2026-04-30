@@ -66,7 +66,11 @@ A API fica disponível em `http://localhost:8000/docs` (Swagger UI).
 
 ### 5. Abrir o frontend
 
-Abrir `frontend/index.html` no navegador. O frontend detecta automaticamente o backend em `localhost:8000`.
+A partir da ISSUE-007 o backend serve o SPA estático. Abrir
+`http://localhost:8000/` no navegador — o `frontend/index.html` é entregue
+pelo FastAPI via `StaticFiles`, mesmo origin que a API. (O acesso via
+`file://` deixou de ser suportado: a entrada `"null"` no `CORS_ORIGINS` foi
+removida.)
 
 ## Endpoints da API
 
