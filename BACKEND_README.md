@@ -83,13 +83,60 @@ DEBUG=false
 
 ### 4. Inicializar Banco de Dados
 
+A criação canônica de tabelas é feita pelo Alembic (ver
+[Migrações de schema](#migrações-de-schema)). Em ambiente vazio, basta:
+
 ```bash
-# Cria tabelas
-python -m backend.cli db-init
+# Aplica todas as migrações pendentes (cria as 9 tabelas)
+alembic upgrade head
 
 # Testa conexão
 python -m backend.cli db-test
 ```
+
+> Compatibilidade: o startup do FastAPI ainda chama `create_all_tables()`
+> como rede de segurança (idempotente — não recria tabelas existentes).
+> Em produção, **rode `alembic upgrade head` antes de subir a API**;
+> evoluções de schema só são aplicadas via migração, nunca via
+> `create_all_tables`.
+
+## Migrações de schema
+
+A partir de ISSUE-009, mudanças de schema do banco são versionadas via
+[Alembic](https://alembic.sqlalchemy.org/). A configuração lê
+`MARKET_DB_URL` do ambiente (mesmo contrato do backend desde ISSUE-004).
+Comandos rodam a partir da raiz `market_platform_unified/`:
+
+```bash
+# Aplicar todas as migrações pendentes
+alembic upgrade head
+
+# Ver versão atual
+alembic current
+
+# Ver histórico
+alembic history --verbose
+
+# Gerar nova migração a partir das mudanças no Base.metadata
+alembic revision --autogenerate -m "descreve a mudanca"
+
+# Reverter última migração (uso raro em prod)
+alembic downgrade -1
+```
+
+Fluxo recomendado para evoluir o schema:
+
+1. Editar `backend/db/schema.py` (adicionar coluna, índice, tabela).
+2. Rodar `alembic revision --autogenerate -m "..."`.
+3. Inspecionar o arquivo gerado em `alembic/versions/` — o autogenerate
+   acerta tabelas e colunas, mas pode errar `server_default`, ENUMs
+   Postgres e renomeações (que aparecem como drop+create).
+4. Rodar `alembic upgrade head` localmente. Confirmar que os testes
+   continuam passando.
+5. Commitar `schema.py` + a nova migração no mesmo PR.
+
+O teste `tests/test_alembic_migration.py::test_no_drift_entre_metadata_e_migration_head`
+falha se alguém alterar `schema.py` sem gerar migração — gate no CI.
 
 ## OS 12 ENDPOINTS REST
 
@@ -305,8 +352,8 @@ logs/checkpoint.txt              # Progresso de ingestão
 
 - `config/symbols.py` — 600 tickers
 - `config/logging_config.py` — logging rotativo
-- `db/connection.py` — engine SQLAlchemy
-- `db/schema.py` — 9 tabelas ORM
+- `db/connection.py` — engine SQLAlchemy (modificado: ISSUE-004 — sem credencial hardcoded)
+- `db/schema.py` — 9 tabelas ORM (fonte da verdade para o autogenerate do Alembic — ver `alembic/`)
 - `data/calendar.py` — calendário dias úteis
 - `data/sectors_gics.py` — 34 setores + 12 países
 - `ingestion/yf_client.py` — cliente yfinance com rate-limit
