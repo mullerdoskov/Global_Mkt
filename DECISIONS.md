@@ -268,6 +268,67 @@ chamam `FastAPICache.reset()` antes de `init` — explicitado no docstring.
 
 ---
 
+## 2026-04-30 — `net_debt_ebitda`: cálculo trailing do Q mais recente, sem fallback
+**Issue:** ISSUE-013
+**Decisão:** A métrica `net_debt_ebitda` no snapshot de `valuation_multiples`
+passa a ser calculada de fato (deixa de ser placeholder/NULL) por uma de
+duas funções novas em `backend/ingestion/fundamentals_loader.py`:
+- `compute_net_debt_ebitda(net_debt, ebitda)` — função pura, devolve
+  `net_debt / ebitda` quando ambos são finitos e `ebitda != 0`; devolve
+  None nos demais casos (None em qualquer operando, ebitda=0, NaN, inf,
+  tipo não numérico).
+- `latest_net_debt_ebitda(session, company_id)` — busca a `FinancialStatement`
+  mais recente por `period_end DESC` (limit 1) e aplica a fórmula.
+
+O loader chama `latest_net_debt_ebitda(session, company.id)` ao montar o
+snapshot, **depois** do bloco que faz commit das demonstrações financeiras —
+então a métrica reflete o Q recém-ingerido quando yfinance trouxe novos
+statements, e cai pro último Q persistido em runs anteriores quando não
+trouxe (ex.: rate-limit do yfinance retornou só `info`).
+**Alternativas consideradas:**
+- (a) Calcular dentro do loop `for col in income.columns:` rastreando o
+  `max(period_end)` em variáveis locais e construindo o snapshot a partir
+  disso. Funciona quando o batch da chamada atual traz income/balance, mas
+  perde a métrica nas chamadas em que yfinance retorna só `info`. O loader
+  precisa funcionar em ambos os modos (ingestão completa e refresh de
+  multiples), portanto rejeitada.
+- (b) Calcular sobre TTM (last 4 quarters somados): `net_debt` mais recente
+  + soma de `ebitda` dos últimos 4 Qs. Mais robusto contra sazonalidade,
+  mas o briefing original (§7.2 I6) diz `(total_debt - cash) / ebitda`
+  sem qualificar TTM, e o yfinance já entrega EBITDA trailing no income
+  statement quando disponível. Mantida a fórmula simples; revisitar se
+  surgir demanda de TTM explícito.
+- (c) Cair pro Q anterior quando `ebitda=0` no Q mais recente. Rejeitada:
+  serve um número que parece atual mas é defasado em 3 meses, sem
+  sinalização. Usuário interno olhando o dashboard tomaria decisão
+  errada. Melhor mostrar None (que o frontend renderiza como "—").
+- (d) Aceitar `ebitda<0` como divisor válido (empresa com EBITDA negativo
+  produziria `net_debt_ebitda` negativo, métrica matematicamente válida
+  mas sem significado financeiro). Mantida — só `ebitda=0` é tratado
+  como caso especial. Empresa com prejuízo operacional severo gera
+  número negativo que sinaliza "métrica não comparável", consistente
+  com convenção de mercado.
+- (e) Persistir como Decimal explícito em vez de float. Rejeitada: a
+  coluna é `Numeric(12,4)` no schema (precisão suficiente), e o input
+  vem do SQLAlchemy como Decimal — a conversão para float dentro de
+  `compute_net_debt_ebitda` é interna; o ORM faz o cast de volta para
+  Numeric ao persistir.
+
+**Trade-off:**
+- A métrica reflete o snapshot trailing do Q mais recente. Empresas
+  com forte sazonalidade podem ter números muito diferentes entre Q1
+  e Q3. Documentar no frontend é responsabilidade da issue de UX
+  (não desta).
+- O lookup `SELECT ... ORDER BY period_end DESC LIMIT 1` é executado
+  uma vez por símbolo no pipeline de ingestão, em batches de tamanho
+  controlado. Custo desprezível mesmo com 600 tickers.
+- Fórmula é específica para empresas (não-financeiras). Bancos/seguradoras
+  usam outras métricas de alavancagem; para esses, `net_debt_ebitda` é
+  numericamente computável mas economicamente sem sentido. O briefing
+  trata todas as empresas igualmente — alinhado.
+
+---
+
 ## 2026-04-30 — Validação estrita de `period`: rejeita silenciamento por padrão
 **Issue:** ISSUE-012
 **Decisão:** Toda string `period` aceita pelos endpoints
