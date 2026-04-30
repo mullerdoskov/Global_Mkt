@@ -134,6 +134,57 @@ arquivo de migração para o próximo agent saber que essa edição é intencion
 
 ---
 
+## 2026-04-30 — Rate limiting via slowapi: 60/min por IP, default-on, off em testes
+**Issue:** ISSUE-010
+**Decisão:** Adotado `slowapi` como gate de rate limiting da API. Quatro
+componentes:
+1. Instância única de `Limiter` em `backend/api/_limiter.py`, com
+   `key_func=get_remote_address` e configuração lida de `settings`
+   (`rate_limit_default="60/minute"`, `rate_limit_enabled=True`).
+2. `app.py` registra `app.state.limiter`, exception handler para
+   `RateLimitExceeded` (`_rate_limit_exceeded_handler` do próprio slowapi)
+   e `SlowAPIMiddleware` na pilha.
+3. Cada um dos 13 endpoints sob `/api` ganhou
+   `@limiter.limit(settings.rate_limit_default)` e `request: Request` como
+   primeiro parâmetro nomeado (slowapi exige `request` no handler para
+   resolver a chave do limite).
+4. `conftest.py` define `RATE_LIMIT_ENABLED=false` para o ambiente de
+   testes — o `Limiter` é instanciado com `enabled=False` e vira no-op,
+   deixando middleware e decoradores no lugar mas sem bloquear. Testes
+   específicos de rate limiting (`tests/test_rate_limiting.py`) usam
+   sub-apps dedicados com Limiters próprios em `enabled=True`.
+**Alternativas consideradas:**
+- (a) Confiar só em `default_limits=[...]` + `SlowAPIMiddleware` global,
+  sem decorar cada endpoint. Menos código, mas o middleware aplica o
+  limite **a toda rota**, inclusive `/health`, `/api/info`, `/docs`,
+  `/openapi.json` e arquivos estáticos do StaticFiles em `/`. Para um SPA
+  que carrega múltiplos assets por pageload, 60/min trip rapidamente —
+  rejeitada.
+- (b) `fastapi-limiter` (alternativa baseada em Redis). Mais robusto em
+  setup multi-worker, mas exige Redis funcionando, o que não é pré-
+  requisito atual (Redis entra na ISSUE-011). Pode ser revisitado depois.
+- (c) Decorar via `Depends(...)` no `include_router` para herdar limite
+  por router. Slowapi não suporta esse padrão direto — só `fastapi-
+  limiter` tem essa ergonomia. Rejeitada.
+**Trade-off:**
+- Slowapi por padrão usa storage em memória (`MemoryStorage`). Isso
+  significa que cada worker do uvicorn tem sua própria contagem — se
+  rodar com `--workers 4`, o limite efetivo é 240/min total (4 × 60) por
+  IP, não 60. Documentado para revisitar quando entrar Redis (ISSUE-011);
+  basta passar `storage_uri="redis://..."` para o Limiter.
+- 13 handlers ganharam `request: Request` como primeiro parâmetro
+  nomeado. Diff mecânico mas largo. O alternativo (sem decorador, só
+  middleware global) reabriria o problema do StaticFiles citado em (a).
+**Como apply / quando revisitar:**
+- A 60/min é conservador para uso interno de comercializadora; se o
+  frontend vier a fazer polling agressivo (ex.: `/api/market/summary` a
+  cada 5s = 12/min), basta ajustar `RATE_LIMIT_DEFAULT` no `.env`.
+- Quando ISSUE-011 (Redis + cache) for implementada, mover storage do
+  Limiter para Redis pelo mesmo URI do cache resolve o issue de multi-
+  worker e dá rate limit distribuído.
+
+---
+
 ## 2026-04-29 — Bootstrap do git em `market_platform_unified/` (pré-requisito não executado)
 **Issue:** N/A — procedimento de bootstrap
 **Decisão:** O pré-requisito de inicializar git em `market_platform_unified/` e conectar ao `mullerdoskov/Global_Mkt` não estava concluído quando a Routine rodou pela primeira vez. A Routine inicializou o repositório neste run, conectou ao remote existente, e abriu o PR #1. O histórico do nested `Global_Mkt_2.0/` (2 commits) não foi incorporado — a Routine não pode fazer força push nem rebase sem autorização humana. Lucas deve resolver o histórico em conjunto com ISSUE-001.

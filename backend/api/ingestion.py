@@ -4,18 +4,21 @@ Endpoints de status de ingestão.
 """
 
 from datetime import datetime
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from sqlalchemy import select, desc
 
+from backend.config.settings import settings
 from backend.db.connection import get_session
 from backend.db.schema import IngestionLog
 from backend.api.models import IngestionStatusResponse, IngestionLogEntry
+from backend.api._limiter import limiter
 
 router = APIRouter(prefix="/ingestion", tags=["ingestion"])
 
 
 @router.get("/status", response_model=IngestionStatusResponse)
-def get_ingestion_status() -> IngestionStatusResponse:
+@limiter.limit(settings.rate_limit_default)
+def get_ingestion_status(request: Request) -> IngestionStatusResponse:
     """
     Retorna status geral da ingestão com log resumido dos últimos registros.
 

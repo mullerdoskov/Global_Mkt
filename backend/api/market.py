@@ -4,10 +4,11 @@ Endpoints de mercado: índices, setores, países.
 """
 
 from datetime import date, timedelta
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from sqlalchemy import select, func
 import pandas as pd
 
+from backend.config.settings import settings
 from backend.db.connection import get_session
 from backend.db.schema import Asset, PriceDaily, Company, SectorGICS, Country
 from backend.config.symbols import INDICES
@@ -16,12 +17,14 @@ from backend.api.models import (
     SectorsResponse, SectorPerformance,
     CountriesResponse, CountryAssets
 )
+from backend.api._limiter import limiter
 
 router = APIRouter(prefix="/market", tags=["market"])
 
 
 @router.get("/summary", response_model=MarketSummaryResponse)
-def get_market_summary() -> MarketSummaryResponse:
+@limiter.limit(settings.rate_limit_default)
+def get_market_summary(request: Request) -> MarketSummaryResponse:
     """
     Retorna resumo dos 16 índices globais com últimos preços.
 
@@ -88,7 +91,8 @@ def get_market_summary() -> MarketSummaryResponse:
 
 
 @router.get("/sectors", response_model=SectorsResponse)
-def get_sectors_performance(period: str = "90d") -> SectorsResponse:
+@limiter.limit(settings.rate_limit_default)
+def get_sectors_performance(request: Request, period: str = "90d") -> SectorsResponse:
     """
     Retorna performance por setor GICS (retorno médio por setor).
 
@@ -193,7 +197,8 @@ def get_sectors_performance(period: str = "90d") -> SectorsResponse:
 
 
 @router.get("/countries", response_model=CountriesResponse)
-def get_countries() -> CountriesResponse:
+@limiter.limit(settings.rate_limit_default)
+def get_countries(request: Request) -> CountriesResponse:
     """
     Retorna lista de países com contagem de ativos.
     """

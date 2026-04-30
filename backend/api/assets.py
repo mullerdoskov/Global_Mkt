@@ -4,19 +4,23 @@ Endpoints de ativos e busca.
 """
 
 from typing import Optional
-from fastapi import APIRouter, Query, HTTPException
+from fastapi import APIRouter, Query, HTTPException, Request
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 
+from backend.config.settings import settings
 from backend.db.connection import get_session
 from backend.db.schema import Asset, Company, Country, SectorGICS, PriceDaily
 from backend.api.models import AssetInfo, AssetDetail, AssetListResponse, CompanyInfo
+from backend.api._limiter import limiter
 
 router = APIRouter(prefix="/assets", tags=["assets"])
 
 
 @router.get("", response_model=AssetListResponse)
+@limiter.limit(settings.rate_limit_default)
 def list_assets(
+    request: Request,
     asset_type: Optional[str] = Query(None, description="Tipo de ativo: stock, index, commodity, fx, crypto"),
     country: Optional[str] = Query(None, description="Código ISO-2 do país"),
     sector: Optional[str] = Query(None, description="Setor GICS"),
@@ -87,7 +91,9 @@ def list_assets(
 
 
 @router.get("/search", response_model=AssetListResponse)
+@limiter.limit(settings.rate_limit_default)
 def search_assets(
+    request: Request,
     q: str = Query(..., min_length=1, max_length=50, description="Termo de busca por símbolo ou nome"),
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=100),
@@ -140,7 +146,8 @@ def search_assets(
 
 
 @router.get("/{symbol}", response_model=AssetDetail)
-def get_asset_detail(symbol: str) -> AssetDetail:
+@limiter.limit(settings.rate_limit_default)
+def get_asset_detail(request: Request, symbol: str) -> AssetDetail:
     """
     Retorna detalhes completos de um ativo.
 

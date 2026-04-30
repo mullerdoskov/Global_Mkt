@@ -3,18 +3,21 @@ api/fundamentals.py
 Endpoints de fundamentos e valuation.
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from sqlalchemy import select
 
+from backend.config.settings import settings
 from backend.db.connection import get_session
 from backend.db.schema import Company, FinancialStatement, ValuationMultiple
 from backend.api.models import FinancialsResponse, FinancialQuarter, ValuationResponse, ValuationMultiples
+from backend.api._limiter import limiter
 
 router = APIRouter(prefix="/fundamentals", tags=["fundamentals"])
 
 
 @router.get("/{symbol}", response_model=FinancialsResponse)
-def get_financials(symbol: str) -> FinancialsResponse:
+@limiter.limit(settings.rate_limit_default)
+def get_financials(request: Request, symbol: str) -> FinancialsResponse:
     """
     Retorna demonstrações financeiras (DRE, balanço, FCF) dos últimos 4 trimestres.
 
@@ -77,7 +80,8 @@ def get_financials(symbol: str) -> FinancialsResponse:
 
 
 @router.get("/{symbol}/valuation", response_model=ValuationResponse)
-def get_valuation(symbol: str) -> ValuationResponse:
+@limiter.limit(settings.rate_limit_default)
+def get_valuation(request: Request, symbol: str) -> ValuationResponse:
     """
     Retorna múltiplos de valuation mais recentes.
 

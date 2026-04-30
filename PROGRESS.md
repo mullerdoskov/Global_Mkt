@@ -21,7 +21,7 @@ Ordem = prioridade de execução. Marcações:
 ## Sprint 1 — Escala
 
 - [x] ISSUE-009 — Alembic + migrações iniciais — PR #5, 2026-04-29 (https://github.com/mullerdoskov/Global_Mkt/pull/5)
-- [ ] ISSUE-010 — Rate limiting com slowapi
+- [x] ISSUE-010 — Rate limiting com slowapi — PR #6, 2026-04-30 (https://github.com/mullerdoskov/Global_Mkt/pull/6)
 - [ ] ISSUE-011 — Cache Redis com fastapi-cache2
 - [ ] ISSUE-012 — Validação robusta de `period`
 - [ ] ISSUE-013 — Implementar `net_debt_ebitda` real
@@ -40,6 +40,26 @@ Ordem = prioridade de execução. Marcações:
 - [ ] ISSUE-020 — WebSocket de preços real-time
 
 ## Histórico
+
+- 2026-04-30 — Run #6: ISSUE-010 resolvida.
+  Rate limiting com slowapi habilitado em todos os endpoints sob `/api` (13
+  rotas: 3 em assets, 4 em prices, 3 em market, 2 em fundamentals, 1 em
+  ingestion). Limite default: 60 req/min por IP via `get_remote_address`.
+  Limiter compartilhado em `backend/api/_limiter.py`; `app.py` registra
+  `app.state.limiter`, exception handler para `RateLimitExceeded` e
+  `SlowAPIMiddleware`. Cada handler ganhou `request: Request` como primeiro
+  parâmetro nomeado (exigido pelo decorador). `/health`, `/api/info` e o
+  StaticFiles continuam fora do gate. Configuração em `settings.py`:
+  `rate_limit_default` (string limits) e `rate_limit_enabled` (bool, default
+  True). `conftest.py` define `RATE_LIMIT_ENABLED=false` para que os smoke
+  tests (várias chamadas em sequência) não tropecem no limite.
+  Tests: `tests/test_rate_limiting.py` adiciona 7 testes — wiring (3),
+  no-op quando desabilitado (2, incluindo 80 chamadas reais ao endpoint),
+  e enforcement real do slowapi (2, via sub-app dedicado com limite
+  "2/minute"). Total: 44/44 testes passando (7 rate_limit + 3 alembic +
+  23 smoke + 6 prices + 5 db_url validation).
+  PR aberto sobre branch da PR #5 (stack) — auto-retarget para `main` quando
+  PRs anteriores mergearem.
 
 - 2026-04-29 — Run #5: ISSUE-009 resolvida.
   Alembic configurado em `market_platform_unified/`. `alembic.ini` na raiz,
