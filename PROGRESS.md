@@ -20,7 +20,7 @@ Ordem = prioridade de execução. Marcações:
 
 ## Sprint 1 — Escala
 
-- [x] ISSUE-009 — Alembic + migrações iniciais — PR #5, 2026-04-29
+- [x] ISSUE-009 — Alembic + migrações iniciais — PR #5, 2026-04-29 (https://github.com/mullerdoskov/Global_Mkt/pull/5)
 - [ ] ISSUE-010 — Rate limiting com slowapi
 - [ ] ISSUE-011 — Cache Redis com fastapi-cache2
 - [ ] ISSUE-012 — Validação robusta de `period`
