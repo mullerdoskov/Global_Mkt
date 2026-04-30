@@ -4,17 +4,18 @@ Cache HTTP compartilhado por toda a API (ISSUE-011).
 
 Estratégia em três camadas:
 
-1. **InMemoryBackend síncrono** (`init_cache_sync`) é instalado no momento
-   em que `backend.app` é importado, ANTES de qualquer requisição. Isso
-   garante que o decorador `@cache(...)` em rotas funcione mesmo em testes
-   que usam `TestClient(app)` sem context-manager (lifespan não roda).
+1. **InMemoryBackend síncrono** (`init_cache_sync`) instala um backend de
+   cache antes que qualquer rota decorada com `@cache(...)` seja exercitada.
+   Em produção, é chamado pelo lifespan do FastAPI via `init_cache_async()`;
+   em testes, por uma fixture autouse no `conftest.py` raiz (ISSUE-014:
+   nenhum side effect em escopo de import).
    `FastAPICache` é classe singleton — chamadas posteriores a `init` apenas
    substituem o backend, sem efeito colateral em rotas decoradas.
 
 2. **Upgrade opcional para Redis** (`init_cache_async`) acontece dentro do
    lifespan startup do FastAPI quando `settings.redis_url` está setada.
-   Se o `ping()` falhar, log warning e continua com o InMemoryBackend já
-   instalado pelo passo 1 — Redis é um nice-to-have, não bloqueia o start.
+   Se o `ping()` falhar, log warning e cai em InMemoryBackend — Redis é um
+   nice-to-have, não bloqueia o start.
 
 3. **Flag global** `settings.cache_enabled` é passada como `enable=` para
    `FastAPICache.init`. Quando `False`, `@cache(...)` vira no-op silencioso
@@ -119,9 +120,6 @@ async def init_cache_async() -> Tuple[str, bool]:
     return (f"redis ({settings.redis_url})", True)
 
 
-# Side effect intencional no import: garante que `FastAPICache._backend` está
-# instalado antes de qualquer rota decorada com `@cache(...)` ser exercitada.
-# Caso contrário, testes que usam `TestClient(app)` sem context-manager (e que
-# portanto não disparam o lifespan) acionariam `AssertionError: You must call
-# FastAPICache.init` na primeira requisição. Idempotente e barato.
-init_cache_sync()
+# ISSUE-014: removido side effect de import. Em produção, `init_cache_async`
+# é chamado pelo lifespan; em testes, uma fixture autouse no `conftest.py` raiz
+# chama `init_cache_sync()` antes de qualquer requisição via `TestClient`.

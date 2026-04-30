@@ -4,8 +4,9 @@ Testes do cache HTTP (fastapi-cache2) — ISSUE-011.
 
 Cobertura:
 
-1. **Wiring** — FastAPICache foi inicializado em escopo de import por
-   `backend.api._cache`. Backend é `InMemoryBackend` (default sem Redis URL),
+1. **Wiring** — FastAPICache é inicializado por uma fixture autouse session-
+   scoped em `conftest.py` raiz (ISSUE-014: removeu o side effect de import
+   que `_cache.py` tinha). Backend é `InMemoryBackend` (default sem Redis URL),
    prefix é "mp", e `enable=False` em testes (definido por `conftest.py`).
 
 2. **No-op quando desabilitado** — com `enable=False`, o decorador `@cache`
@@ -116,8 +117,10 @@ def reset_cache_state():
 
 class TestCacheWiring:
     def test_backend_instalado(self):
-        # `init_cache_sync()` é chamado no import de `backend.api._cache`.
-        # Sem isso, qualquer rota decorada com `@cache(...)` lançaria
+        # ISSUE-014: `init_cache_sync()` não roda mais em escopo de import.
+        # Uma fixture autouse session-scoped no `conftest.py` raiz garante
+        # que o backend está instalado antes de qualquer teste rodar — sem
+        # isso, qualquer rota decorada com `@cache(...)` lançaria
         # `AssertionError: You must call init first!` na primeira request.
         backend = FastAPICache.get_backend()
         assert backend is not None
