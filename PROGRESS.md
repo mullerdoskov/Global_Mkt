@@ -39,7 +39,39 @@ Ordem = prioridade de execução. Marcações:
 - [ ] ISSUE-019 — Migrar `index.html` para Vite + React + TS
 - [ ] ISSUE-020 — WebSocket de preços real-time
 
+## Não-catalogadas (alavanca alta, baixo risco)
+
+- [x] ISSUE-021 — CI no GitHub Actions (`alembic upgrade head` + `pytest` em SQLite) — PR #16, 2026-04-30 (https://github.com/mullerdoskov/Global_Mkt/pull/16)
+- [ ] ISSUE-022 — Comitar SKILL.md dos agents do ecossistema em `.claude/skills/` (pré-req #5 do prompt original)
+- [ ] ISSUE-023 — Backups automáticos do PostgreSQL (`pg_dump` semanal + retention mensal)
+
 ## Histórico
+
+- 2026-04-30 — Run #16: ISSUE-021 resolvida.
+  Primeiro gate de CI automático no GitHub Actions. Workflow único em
+  `.github/workflows/ci.yml`, dispara em PRs contra `main` e em pushes
+  para `main`. Job `backend` em `ubuntu-latest`, Python 3.11 (mesmo da
+  máquina de dev), pip cacheado por hash de `backend/requirements.txt`.
+  Passos: instala deps, valida que `alembic upgrade head` aplica em DB
+  SQLite virgem (`MARKET_DB_URL=sqlite:///./ci_market.db` no env do job),
+  e roda `pytest -q` (250 testes coletados, 249 passing + 1 skip
+  pré-existente). `concurrency: cancel-in-progress=true` para não
+  desperdiçar minutos quando vários pushes chegam em sequência;
+  `timeout-minutes: 15` como circuit breaker.
+  Decisão arquitetural: SQLite no CI (não Postgres). Justificativa em
+  DECISIONS.md — toda a suíte já roda em SQLite localmente, Alembic
+  migration testa downgrade round-trip dentro do pytest, e adicionar
+  service container Postgres dobraria o tempo do job sem capturar
+  mais regressão. Quando ISSUE-019 trocar o frontend para Vite, este
+  workflow ganha um job `frontend` paralelo (`npm ci && npm run build`).
+  Sem dependência nova no `requirements.txt` (CI usa o que já existe).
+  Não dispara contra branches `routine/*` puros (apenas via PR para
+  `main`) — evita gastar minutos em branches intermediárias do stack
+  enquanto não há intenção de merge.
+  PR #16 aberto sobre branch da PR #15 (stack) — auto-retarget para
+  `main` quando PRs anteriores mergearem. Por sair fora da sequência
+  do briefing original (ISSUE-019/020 são Sprint 3 opcional), entra
+  como categoria nova "Não-catalogadas" no PROGRESS.
 
 - 2026-04-30 — Run #15: ISSUE-018 implementada (backend + frontend + migration).
   Implementação completa contra o ADR escrito em Run #14. Backend:

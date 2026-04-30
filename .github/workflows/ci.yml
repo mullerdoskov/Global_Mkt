@@ -1,0 +1,54 @@
+name: CI
+
+# ISSUE-021 — gate de qualidade automático sobre toda PR e push em main.
+# Escopo proporcional ao projeto (1 backend Python + frontend estático):
+# valida que (a) Alembic chega a head em DB virgem e (b) toda a suíte
+# pytest passa. Frontend é servido por StaticFiles (sem build); quando
+# ISSUE-019 trocar para Vite, este workflow ganha um job paralelo.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# Cancela runs anteriores no mesmo branch quando um novo push chega.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend — Alembic head + pytest
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      # SQLite local — sem dependência de Postgres/Redis no CI.
+      # conftest.py também faz setdefault, mas Alembic não passa pelo
+      # conftest, então a env precisa estar setada no nível do job.
+      MARKET_DB_URL: sqlite:///./ci_market.db
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+
+      - name: Verify Alembic head applies on a blank SQLite DB
+        run: |
+          rm -f ci_market.db
+          alembic upgrade head
+
+      - name: Run pytest
+        run: pytest -q
