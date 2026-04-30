@@ -14,7 +14,7 @@ Ordem = prioridade de execução. Marcações:
 - [x] ISSUE-003 — Fix exception handler em `app.py` — PR #1, 2026-04-29 (https://github.com/mullerdoskov/Global_Mkt/pull/1)
 - [x] ISSUE-004 — Remover senha hardcoded em `connection.py:16` e `settings.py:13` — PR #2, 2026-04-29 (https://github.com/mullerdoskov/Global_Mkt/pull/2)
 - [humano-only] ISSUE-005 — Auditar git history por senha (filter-repo é destrutivo)
-- [x] ISSUE-006 — Smoke tests da API (cobertura completa, 1 teste por endpoint) — PR #3, 2026-04-29
+- [x] ISSUE-006 — Smoke tests da API (cobertura completa, 1 teste por endpoint) — PR #3, 2026-04-29 (https://github.com/mullerdoskov/Global_Mkt/pull/3)
 - [ ] ISSUE-007 — Servir frontend via FastAPI StaticFiles
 - [humano-only] ISSUE-008 — Arquivar `market_platform/` e `emergent/`
 
