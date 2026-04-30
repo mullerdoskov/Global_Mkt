@@ -265,6 +265,114 @@ await FastAPICache.clear(namespace="market")  # apaga só /api/market/*
 await FastAPICache.clear()                    # apaga tudo
 ```
 
+## Agendamento
+
+A partir de ISSUE-015, a atualização incremental diária é disparada por
+um agendador externo (Windows Task Scheduler ou cron) via wrappers em
+`scripts/`. A lógica fica no módulo Python
+`backend.scheduling.incremental_update` — testável e independente de
+shell.
+
+### Quem chama o quê
+
+```
+Windows Task Scheduler  ──►  scripts/scheduled_update.ps1
+cron / WSL              ──►  scripts/scheduled_update.sh
+                                    │
+                                    │ ativa venv, carrega .env, delega
+                                    ▼
+                       python -m backend.scheduling.incremental_update
+                                    │
+                                    │ chama update_prices(lookback_days)
+                                    ▼
+                       backend.ingestion.loader.update_prices
+                       (mesmo pipeline do `python -m backend.cli update-prices`)
+```
+
+### Exit codes
+
+Propagados do módulo Python para o agendador:
+
+| Código | Significado | Como reagir |
+|---|---|---|
+| `0` | Run OK, todas as ingestões bem-sucedidas | Task Scheduler marca verde, sem ação |
+| `2` | Run completo mas com `errors > 0` (ex.: rate-limit em 1 ticker) | Inspecionar log do run; sem reagendamento automático |
+| `1` | Falha não recuperada (exception) | Ação humana — checar conectividade, env, banco |
+
+A diferenciação `1 vs 2` evita que cada falha parcial de yfinance
+(comum: 429 esporádico em 1 de ~600 tickers) marque o run inteiro como
+FAILED no Task Scheduler. Logs por run ficam em
+`<repo>/logs/scheduler/incremental_update_YYYY-MM-DDTHHMMSSZ.log`
+(timestamp em UTC). O destino pode ser sobrescrito via env
+`SCHEDULER_LOG_DIR` ou flag `--log-dir`.
+
+### Rodar manualmente
+
+```bash
+# Padrão: lookback 5 dias, log em <repo>/logs/scheduler/
+python -m backend.scheduling.incremental_update
+
+# Customizar lookback
+python -m backend.scheduling.incremental_update -d 10
+
+# Custom log dir
+python -m backend.scheduling.incremental_update --log-dir C:\ProgramData\MDP\logs
+```
+
+### Agendar no Windows Task Scheduler
+
+A partir de PowerShell elevado (ou simplesmente sob o usuário que vai
+rodar a task — não exige admin se a task rodar como o próprio usuário):
+
+```powershell
+cd <repo>\scripts
+.\Register-ScheduledTask.ps1                    # 22:00 local, lookback 5
+.\Register-ScheduledTask.ps1 -At "21:30" -Days 10
+```
+
+O script é **idempotente**: se a task já existir, é desregistrada e
+recriada com a nova configuração. Verificar:
+
+```powershell
+Get-ScheduledTask -TaskName "MDP Incremental Update" | Format-List *
+```
+
+Desregistrar:
+
+```powershell
+Unregister-ScheduledTask -TaskName "MDP Incremental Update" -Confirm:$false
+```
+
+> **Hora local vs BRT.** O Task Scheduler nativo só dispara em hora
+> local da máquina. Garanta que a máquina alvo esteja em
+> `America/Sao_Paulo` (default em estações de trabalho BR) antes de
+> assumir que "22:00" é "22:00 BRT". Em servidor UTC, ajuste `-At`
+> para `01:00` (= 22:00 BRT no horário padrão).
+
+### Agendar no Linux / WSL via cron
+
+Tornar o `.sh` executável e adicionar à crontab:
+
+```bash
+chmod +x <repo>/scripts/scheduled_update.sh
+crontab -e
+# Diário às 22h local — máquina precisa estar em America/Sao_Paulo
+0 22 * * * /caminho/para/<repo>/scripts/scheduled_update.sh >> /var/log/mdp_wrapper.log 2>&1
+```
+
+### Onde mexer no código
+
+- `backend/scheduling/incremental_update.py` — lógica do run agendado
+  (exit codes, log per-run, plumbing para `update_prices`).
+- `scripts/scheduled_update.ps1` — wrapper PowerShell (ativa venv,
+  carrega `.env`, delega).
+- `scripts/scheduled_update.sh` — wrapper Bash (mesma estrutura).
+- `scripts/Register-ScheduledTask.ps1` — registra o job no Windows
+  Task Scheduler de forma idempotente.
+
+Para um dia migrar para um orquestrador (Prefect/Dagster), o módulo
+Python já é o ponto de entrada — basta envolvê-lo numa flow/job.
+
 ## OS 12 ENDPOINTS REST
 
 ### 1. Assets (`/api/assets`)
