@@ -1,6 +1,7 @@
 """
 config/symbols.py
-~600 tickers organizados por tipo e mercado: BR/US/EU + índices, commodities, FX, cripto.
+~640 tickers organizados por tipo e mercado: BR/US/EU/Ásia/Oceania + índices,
+commodities, FX, cripto. Ásia (JP/HK) e Oceania (AU) adicionados em ISSUE-016.
 """
 
 # ══════════════════════════════════════════════
@@ -117,6 +118,80 @@ STOCKS_CH = [
 ]
 
 # ══════════════════════════════════════════════
+# AÇÕES JAPÃO — TSE (Nikkei 225, ~20)
+# ══════════════════════════════════════════════
+# Sufixo .T = Tokyo Stock Exchange. Códigos numéricos de 4 dígitos.
+STOCKS_JP = [
+    # Auto & Indústria
+    "7203.T",  # Toyota Motor
+    "7267.T",  # Honda Motor
+    "6501.T",  # Hitachi
+    "6367.T",  # Daikin Industries
+    "6594.T",  # Nidec
+    # Tech & Eletrônicos
+    "6758.T",  # Sony Group
+    "7974.T",  # Nintendo
+    "6861.T",  # Keyence
+    "8035.T",  # Tokyo Electron
+    "6981.T",  # Murata Manufacturing
+    # Financeiro
+    "8306.T",  # Mitsubishi UFJ Financial Group
+    "8316.T",  # Sumitomo Mitsui Financial Group
+    "8058.T",  # Mitsubishi Corp
+    # Telecom
+    "9432.T",  # Nippon Telegraph and Telephone (NTT)
+    "9433.T",  # KDDI
+    "9984.T",  # SoftBank Group
+    # Saúde & Consumo
+    "4502.T",  # Takeda Pharmaceutical
+    "4063.T",  # Shin-Etsu Chemical
+    "6098.T",  # Recruit Holdings
+    "4661.T",  # Oriental Land (Tokyo Disney)
+]
+
+# ══════════════════════════════════════════════
+# AÇÕES AUSTRÁLIA — ASX 200 (~10)
+# ══════════════════════════════════════════════
+# Sufixo .AX = Australian Securities Exchange.
+STOCKS_AU = [
+    # Mineração
+    "BHP.AX",   # BHP Group
+    # Bancos
+    "CBA.AX",   # Commonwealth Bank of Australia
+    "NAB.AX",   # National Australia Bank
+    "WBC.AX",   # Westpac Banking
+    "ANZ.AX",   # ANZ Group
+    "MQG.AX",   # Macquarie Group
+    # Saúde
+    "CSL.AX",   # CSL Limited
+    # Varejo & Consumo
+    "WES.AX",   # Wesfarmers
+    "WOW.AX",   # Woolworths Group
+    # Telecom
+    "TLS.AX",   # Telstra
+]
+
+# ══════════════════════════════════════════════
+# AÇÕES HONG KONG — HKEX (Hang Seng, ~10)
+# ══════════════════════════════════════════════
+# Sufixo .HK = Hong Kong Stock Exchange. Códigos numéricos de 4 dígitos com zero-pad.
+STOCKS_HK = [
+    # Internet & Tech
+    "0700.HK",  # Tencent Holdings
+    "9988.HK",  # Alibaba Group
+    # Financeiro
+    "0005.HK",  # HSBC Holdings
+    "1299.HK",  # AIA Group
+    "0939.HK",  # China Construction Bank
+    "1398.HK",  # ICBC
+    "2318.HK",  # Ping An Insurance
+    "0388.HK",  # Hong Kong Exchanges and Clearing
+    # Telecom & Energia
+    "0941.HK",  # China Mobile
+    "0003.HK",  # Hong Kong & China Gas (Towngas)
+]
+
+# ══════════════════════════════════════════════
 # ÍNDICES GLOBAIS (16)
 # ══════════════════════════════════════════════
 INDICES = [
@@ -200,7 +275,10 @@ CRYPTO = [
 # ══════════════════════════════════════════════
 # AGREGAÇÕES
 # ══════════════════════════════════════════════
-ALL_STOCKS = STOCKS_BR + STOCKS_US + STOCKS_UK + STOCKS_DE + STOCKS_FR + STOCKS_NL + STOCKS_CH
+ALL_STOCKS = (
+    STOCKS_BR + STOCKS_US + STOCKS_UK + STOCKS_DE + STOCKS_FR + STOCKS_NL + STOCKS_CH
+    + STOCKS_JP + STOCKS_AU + STOCKS_HK
+)
 ALL_TICKERS = ALL_STOCKS + INDICES + COMMODITIES + FX + CRYPTO
 
 # Mapeamento tipo → lista de símbolos
@@ -229,6 +307,12 @@ def get_country_for_symbol(symbol: str) -> str:
         return "CH"
     elif symbol.endswith(".SS"):
         return "CN"
+    elif symbol.endswith(".T"):
+        return "JP"
+    elif symbol.endswith(".AX"):
+        return "AU"
+    elif symbol.endswith(".HK"):
+        return "HK"
     elif "=X" in symbol or symbol == "DX-Y.NYB":
         return "XX"  # Global / sem país
     elif "=F" in symbol:

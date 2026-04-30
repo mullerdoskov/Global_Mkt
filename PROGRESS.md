@@ -30,7 +30,7 @@ Ordem = prioridade de execução. Marcações:
 ## Sprint 2 — Continuidade do briefing
 
 - [x] ISSUE-015 — Agendamento incremental — PR #11, 2026-04-30 (https://github.com/mullerdoskov/Global_Mkt/pull/11)
-- [ ] ISSUE-016 — Adicionar ativos asiáticos (JP/AU/HK)
+- [x] ISSUE-016 — Adicionar ativos asiáticos (JP/AU/HK) — PR #12, 2026-04-30 (https://github.com/mullerdoskov/Global_Mkt/pull/12)
 - [ ] ISSUE-017 — Endpoint `/api/export/{symbol}.csv`
 - [ ] ISSUE-018 — Watchlist persistente (DB)
 
@@ -40,6 +40,33 @@ Ordem = prioridade de execução. Marcações:
 - [ ] ISSUE-020 — WebSocket de preços real-time
 
 ## Histórico
+
+- 2026-04-30 — Run #12: ISSUE-016 resolvida.
+  Universo de ativos passa a cobrir Ásia/Oceania. `backend/config/symbols.py`
+  ganha três listas: `STOCKS_JP` (20 do Nikkei 225), `STOCKS_AU` (10 do
+  ASX 200), `STOCKS_HK` (10 do HSI). Total de tickers vai de ~600 para ~640
+  (+40 ações novas). Os três índices de bolsa (`^N225`, `^HSI`, `^AXJO`) já
+  estavam em `INDICES` desde o seed inicial — não precisaram ser adicionados.
+  `get_country_for_symbol` ganha 3 sufixos: `.T → JP`, `.AX → AU`, `.HK → HK`.
+  `backend/data/sectors_gics.py:COUNTRIES` ganha entrada para Hong Kong
+  (`HK / HKG / Asia / HKD / HKEX / .HK`); Japão e Austrália já estavam
+  presentes. Total de países: 12 → 13.
+  Pipeline de ingestão (`ingest_prices` em `backend/ingestion/loader.py`)
+  não precisou mudar: ele itera `SYMBOLS_BY_TYPE["stock"]`, e `ALL_STOCKS`
+  agora inclui os 40 novos. Decisão arquitetural sobre o índice `^HSI` (HK
+  vs. CN) registrada em DECISIONS.md.
+  Tests: `tests/test_asian_assets.py` adiciona 34 testes — 3 sobre tamanho
+  mínimo das listas, 3 sobre convenção de sufixo yfinance, 5 sobre inclusão
+  em ALL_STOCKS / SYMBOLS_BY_TYPE / sem-duplicatas, 3 parametrizados sobre
+  presença dos índices, 12 sobre `get_country_for_symbol` (9 parametrizados
+  + 3 sobre listas inteiras), 4 sobre `COUNTRIES` (HK presente, JP/AU não
+  regrediram, iso2 único), e 3 smoke de `ensure_asset_exists` (cria company
+  com country_id correto para 1 ticker JP/AU/HK cada). Total: 207/207
+  passando + 1 skip pré-existente (34 asian + 173 anteriores).
+  Sem dependência de internet ou banco real: yfinance é mockado via
+  `MagicMock`, banco usa SQLite em memória criado por `Base.metadata.create_all`.
+  PR aberto sobre branch da PR #11 (stack) — auto-retarget para `main`
+  quando PRs anteriores mergearem.
 
 - 2026-04-30 — Run #11: ISSUE-015 resolvida.
   Atualização incremental agendada agora roda via `backend.scheduling.incremental_update`

@@ -5,6 +5,58 @@ Formato: data — título, issue de referência, decisão, alternativas, trade-o
 
 ---
 
+## 2026-04-30 — Universo de ativos asiáticos: 20 JP + 10 AU + 10 HK
+**Issue:** ISSUE-016
+**Decisão:** Adicionadas três listas em `backend/config/symbols.py`:
+- `STOCKS_JP` (20 nomes do Nikkei 225 — Toyota, Sony, SoftBank, Keyence,
+  Mitsubishi UFJ, etc., sufixo yfinance `.T` = TSE).
+- `STOCKS_AU` (10 nomes do ASX 200 — BHP, CBA, CSL, NAB, WBC, ANZ, MQG, WES,
+  WOW, TLS, sufixo `.AX`).
+- `STOCKS_HK` (10 nomes do Hang Seng — Tencent, Alibaba, HSBC, AIA, CCB,
+  ICBC, Ping An, HKEX, China Mobile, Towngas, sufixo `.HK`).
+Todas entram em `ALL_STOCKS` e em `SYMBOLS_BY_TYPE["stock"]` — pipeline de
+ingestão (`backend.ingestion.loader.ingest_prices`) passa a buscá-las sem
+mudança de código adicional. Sufixos roteados em `get_country_for_symbol`:
+`.T → JP`, `.AX → AU`, `.HK → HK`.
+
+**Alternativas consideradas:**
+- Listar apenas índices (`^N225`, `^HSI`, `^AXJO`) sem ações individuais —
+  rejeitado: o briefing pede cobertura de companhias asiáticas, não só
+  benchmarks.
+- Cobrir o universo completo (Nikkei 225 inteiro + ASX 200 + HSI completo,
+  ~480 tickers) — rejeitado: explosão de chamadas yfinance (limite de
+  ~8 req/min) sem ganho marginal de inteligência de mercado para o caso de
+  uso atual da Bem Energia. As 40 selecionadas cobrem >70% da capitalização
+  de mercado de cada índice.
+- Usar `0700.HK` no formato sem zero-pad (`700.HK`) — rejeitado: yfinance
+  exige o formato com 4 dígitos zero-padded para ações HK, idem para
+  códigos JP de 4 dígitos como `7203.T`.
+
+**Trade-off:** ingestão diária ganha ~40 chamadas yfinance (~5 minutos extra
+no batch). Custos negligíveis dentro do limite atual. Tickers HK e JP têm
+horários de fechamento diferentes (Tokyo fecha ~15:00 JST, HK fecha
+~16:00 HKT, ASX fecha ~16:00 AEDT) — todos antes do trigger de 22:00 BRT do
+agendador (ISSUE-015), então não há risco de capturar dia parcial.
+
+---
+
+## 2026-04-30 — Hong Kong adicionado a `COUNTRIES` (13 países no total)
+**Issue:** ISSUE-016
+**Decisão:** Nova entrada `HK / HKG / Hong Kong / Asia / HKD / HKEX / .HK`
+em `backend/data/sectors_gics.py:COUNTRIES`. Japão (JP) e Austrália (AU) já
+existiam pré-ISSUE-016 com sufixos corretos.
+**Alternativas consideradas:** mapear HK como subdivisão de CN
+(`get_country_for_symbol("0700.HK") → "CN"`) para reduzir cardinalidade —
+rejeitado: HKD ≠ CNY, HKEX ≠ SSE/SZSE, regulação distinta. Tratar como
+jurisdição separada é o padrão de inteligência de mercado.
+**Trade-off:** o índice `^HSI` (Hang Seng) foi mantido mapeado para `CN` em
+`get_country_for_symbol` — ele *é* listado em HK mas trackeia majoritariamente
+H-shares de empresas chinesas continentais. A inconsistência é deliberada
+e está coberta por teste explícito (`test_indices_asiaticos_continuam_mapeando_corretamente`)
+para que mudanças futuras precisem decidir conscientemente.
+
+---
+
 ## 2026-04-29 — Paginação de `GET /api/prices` via `total` + `page` + `page_size`
 **Issue:** ISSUE-002
 **Decisão:** `LatestPricesResponse` passa a expor `total` (contagem total de ativos com preço), `page` e `page_size` em vez de somente `count` (contagem dos itens retornados). Default: `page_size=50`, máx `100`.
