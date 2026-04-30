@@ -144,10 +144,18 @@ def test_sh_implements_retention_via_find_mtime():
 
 
 def test_sh_passes_bash_n():
-    """bash -n faz parse syntax sem executar. So roda se bash existir."""
+    """bash -n faz parse syntax sem executar. So roda se bash funcional existir."""
     bash = shutil.which("bash")
     if bash is None:
         pytest.skip("bash nao disponivel neste ambiente")
+    probe = subprocess.run(
+        [bash, "-c", "exit 0"], capture_output=True, text=True, timeout=10
+    )
+    if probe.returncode != 0:
+        pytest.skip(
+            f"bash presente mas nao funcional (provavel WSL relay sem distro): "
+            f"stderr={probe.stderr!r}"
+        )
     result = subprocess.run(
         [bash, "-n", str(SH_WRAPPER)],
         capture_output=True,
