@@ -22,7 +22,7 @@ Ordem = prioridade de execução. Marcações:
 
 - [x] ISSUE-009 — Alembic + migrações iniciais — PR #5, 2026-04-29 (https://github.com/mullerdoskov/Global_Mkt/pull/5)
 - [x] ISSUE-010 — Rate limiting com slowapi — PR #6, 2026-04-30 (https://github.com/mullerdoskov/Global_Mkt/pull/6)
-- [x] ISSUE-011 — Cache Redis com fastapi-cache2 — PR #7, 2026-04-30
+- [x] ISSUE-011 — Cache Redis com fastapi-cache2 — PR #7, 2026-04-30 (https://github.com/mullerdoskov/Global_Mkt/pull/7)
 - [ ] ISSUE-012 — Validação robusta de `period`
 - [ ] ISSUE-013 — Implementar `net_debt_ebitda` real
 - [ ] ISSUE-014 — Remover side effects de import
