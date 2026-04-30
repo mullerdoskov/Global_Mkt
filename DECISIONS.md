@@ -62,6 +62,32 @@ que a quebra de contrato.
 
 ---
 
+## 2026-04-29 — Frontend servido pelo backend via `StaticFiles`; antigo `GET /` movido para `GET /api/info`
+**Issue:** ISSUE-007
+**Decisão:** Três mudanças acopladas:
+1. `app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True))` registrado
+   ao final de `app.py`, depois de todos os routers e rotas explícitas. Com
+   `html=True`, `GET /` devolve `frontend/index.html`. Outros caminhos não
+   capturados por rotas explícitas são servidos a partir de `frontend/`.
+   `FRONTEND_DIR` é resolvido em tempo de import via
+   `Path(__file__).resolve().parent.parent / "frontend"` para não depender do
+   CWD em que o `uvicorn` for invocado.
+2. Endpoint antigo `@app.get("/")` (JSON com `name/version/description/docs/api_prefix`)
+   movido para `@app.get("/api/info")`. Preserva o contrato para qualquer
+   consumidor externo e libera `/` para o SPA.
+3. `cors_origins.append("null")` removido — a origem `"null"` que o navegador
+   envia ao abrir um arquivo via `file://` não é mais necessária, já que o
+   frontend é servido pelo mesmo origin que a API.
+**Alternativas consideradas:** (a) manter `@app.get("/")` retornando JSON e
+servir o SPA em `/app` ou `/ui` — rejeitada por contrariar o briefing
+("frontend acessível em `localhost:8000/`"); (b) servir via Nginx/CDN
+separado — overkill para desenvolvimento e PoC interno.
+**Trade-off:** acesso via `file://` deixa de funcionar (CORS bloqueia o
+`fetch` para `localhost:8000/api`). Documentado no `README.md` seção 5. Para
+desenvolvimento local, basta abrir `http://localhost:8000/`.
+
+---
+
 ## 2026-04-29 — Bootstrap do git em `market_platform_unified/` (pré-requisito não executado)
 **Issue:** N/A — procedimento de bootstrap
 **Decisão:** O pré-requisito de inicializar git em `market_platform_unified/` e conectar ao `mullerdoskov/Global_Mkt` não estava concluído quando a Routine rodou pela primeira vez. A Routine inicializou o repositório neste run, conectou ao remote existente, e abriu o PR #1. O histórico do nested `Global_Mkt_2.0/` (2 commits) não foi incorporado — a Routine não pode fazer força push nem rebase sem autorização humana. Lucas deve resolver o histórico em conjunto com ISSUE-001.
