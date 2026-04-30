@@ -5,6 +5,64 @@ Formato: data — título, issue de referência, decisão, alternativas, trade-o
 
 ---
 
+## 2026-04-30 — CI no GitHub Actions: SQLite-only, sem Postgres no runner
+**Issue:** ISSUE-021 (não-catalogada, alavanca alta)
+**Decisão:** Workflow único em `.github/workflows/ci.yml`, dispara em
+PRs contra `main` e em pushes a `main`. Job `backend` em
+`ubuntu-latest`, Python 3.11, valida que (a) `alembic upgrade head`
+aplica em DB SQLite virgem e (b) `pytest -q` passa (250 testes
+coletados, 249 + 1 skip pré-existente). `MARKET_DB_URL=sqlite:///./ci_market.db`
+no env do job (Alembic não passa pelo `conftest.py`). Pip cacheado por
+hash de `backend/requirements.txt`. `concurrency: cancel-in-progress=true`
+e `timeout-minutes: 15` como circuit breakers.
+
+**Alternativas consideradas:**
+1. **Postgres como service container** (`services: postgres:16`).
+   Seria fiel ao ambiente de produção, mas: (i) toda a suíte já roda
+   em SQLite localmente sem regressão; (ii) `test_alembic_migration.py`
+   já exercita `upgrade → downgrade → upgrade` round-trip dentro do
+   pytest; (iii) dobraria o tempo do job (boot do container + connect
+   retry). O custo de duplicar não compra cobertura nova. Quando algum
+   recurso Postgres-only entrar no projeto (ex.: `DISTINCT ON` real,
+   GIN index, JSONB ops), aí adicionar service container — não antes.
+2. **Matriz Python (3.10 + 3.11 + 3.12).** Repo só tem 1 versão alvo
+   (3.11 da máquina de dev). Matriz seria over-engineering hoje. Adicionar
+   se a base de devs crescer ou se for empacotar como lib redistribuível.
+3. **Lint/format job (ruff, black, mypy).** Repo não adotou ainda — não
+   tem `pyproject.toml` com config. Fazer aqui seria bundle de 2 decisões
+   (CI + style policy). Issue separada quando o time decidir adotar.
+4. **Frontend job (npm ci + build).** Hoje o frontend é `index.html`
+   vanilla servido por StaticFiles, sem build. Adicionar quando ISSUE-019
+   trocar para Vite + React + TS — aí sim ganha um job `frontend` paralelo.
+5. **Trigger em todo branch `routine/*`.** Stack de 16 PRs sobre `main`
+   ainda intocada → cada push em rebase reentraria N vezes em CI.
+   Restrito a `pull_request: branches: [main]` + `push: branches: [main]`
+   evita gasto desnecessário enquanto branches intermediárias estão
+   estacionadas; o gate roda quando o PR for criado e em cada push
+   subsequente até o merge.
+
+**Trade-off:**
+- **SQLite no CI vs. Postgres em prod:** divergência conhecida.
+  Mitigada por `test_db_url_validation.py` (5 testes) e pelo fato de
+  Alembic já ter sido validado contra Postgres em runs anteriores
+  (DECISIONS.md, ISSUE-009). Risco residual: feature SQL-específica
+  passa em SQLite no CI mas quebra em Postgres em prod. Detectado em
+  staging — aceitável para o estágio atual.
+- **Pré-requisito para `MDP PR Reviewer`:** o prompt original
+  mencionava uma rotina secundária de review de PRs. Sem CI, qualquer
+  reviewer (humano ou agente) precisa rodar testes manualmente — fricção
+  alta. Este PR destrava essa rotina sem gasto adicional.
+
+**Como aplicar (verificação após merge):**
+1. Após o merge desta PR em `main`, GitHub Actions roda automaticamente
+   no próximo push. Confirmar via `gh run list --workflow=ci.yml --limit 5`.
+2. Em PR, aba "Checks" mostra "Backend — Alembic head + pytest".
+3. Branch protection rule sugerida (manual via UI): exigir o check
+   `backend` antes de permitir merge em `main`. Não automatizado neste PR
+   porque mexe em settings do repo (decisão humana, não da Routine).
+
+---
+
 ## 2026-04-30 — ISSUE-018 implementação: 2 ajustes contra o ADR original
 **Issue:** ISSUE-018 (implementação)
 **Decisão:** A implementação seguiu o ADR de 2026-04-30 com 2 ajustes
