@@ -41,6 +41,19 @@ class Settings(BaseSettings):
     # `rate_limit_enabled=False` (testes), este limite também vira no-op.
     rate_limit_export: str = "10/minute"
 
+    # Rate limits dedicados para a watchlist (ISSUE-018). Read mais frouxo
+    # que o default porque a UI pode poll; write mais apertado que default
+    # para cortar spam de inserções/remoções.
+    rate_limit_watchlist_read: str = "120/minute"
+    rate_limit_watchlist_write: str = "30/minute"
+
+    # Cookie de sessão da watchlist (ISSUE-018). HttpOnly e SameSite=Lax
+    # são fixos — Secure é controlável por env para permitir dev local
+    # sobre http://localhost:8000. Em produção sobre HTTPS, manter True.
+    session_cookie_name: str = "mdp_session"
+    session_cookie_secure: bool = True
+    session_cookie_max_age_seconds: int = 315_360_000  # ~10 anos
+
     # Cache (ISSUE-011). Se `redis_url` setada, o backend de cache vira Redis
     # (e na presença de multi-worker, distribuído entre eles). Se não setada,
     # cai em InMemoryBackend (process-local). `cache_enabled=False` transforma

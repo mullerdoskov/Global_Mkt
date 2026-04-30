@@ -32,7 +32,7 @@ Ordem = prioridade de execução. Marcações:
 - [x] ISSUE-015 — Agendamento incremental — PR #11, 2026-04-30 (https://github.com/mullerdoskov/Global_Mkt/pull/11)
 - [x] ISSUE-016 — Adicionar ativos asiáticos (JP/AU/HK) — PR #12, 2026-04-30 (https://github.com/mullerdoskov/Global_Mkt/pull/12)
 - [x] ISSUE-017 — Endpoint `/api/export/{symbol}.csv` — PR #13, 2026-04-30 (https://github.com/mullerdoskov/Global_Mkt/pull/13)
-- [ ] ISSUE-018 — Watchlist persistente (DB) — ADR registrado em PR #14 (cookie UUID anônimo): https://github.com/mullerdoskov/Global_Mkt/pull/14 — implementação pendente
+- [x] ISSUE-018 — Watchlist persistente (DB) — ADR em PR #14, implementação em PR #15
 
 ## Sprint 3 — Opcional, sem prioridade
 
@@ -40,6 +40,51 @@ Ordem = prioridade de execução. Marcações:
 - [ ] ISSUE-020 — WebSocket de preços real-time
 
 ## Histórico
+
+- 2026-04-30 — Run #15: ISSUE-018 implementada (backend + frontend + migration).
+  Implementação completa contra o ADR escrito em Run #14. Backend:
+  novo módulo `backend/api/_session.py` com dependency `ensure_session`
+  que lê/seta cookie `mdp_session` (UUID v4, HttpOnly, Secure-em-prod,
+  SameSite=Lax, Max-Age=10y) e gerencia tabela `user_sessions`. Novo
+  módulo `backend/api/watchlist.py` com 3 endpoints idempotentes:
+  `GET/POST/DELETE /api/watchlist[/{symbol}]`. POST retorna 200 (já
+  existia) ou 200 (criou) com position; DELETE retorna 204 (sempre
+  idempotente — só 404 se asset desconhecido). Schema: 2 tabelas
+  novas (`user_sessions` PK uuid, `watchlist_items` com FK ON DELETE
+  CASCADE para asset e session, UNIQUE(session_uuid, asset_id)).
+  Migration Alembic `77b6af8de3dd_add_watchlist_tables.py` puramente
+  aditiva. Frontend: novo store global `watchlistStore` + hook
+  `useWatchlist` + componente `WatchlistStar` reusável; página
+  `/watchlist` com tabela (símbolo, nome, tipo, moeda, ação remover);
+  estrela na header do `SymbolDetail`; entrada no sidebar.
+  `apiFetch` agora envia `credentials: 'include'` para o cookie.
+  Settings: `rate_limit_watchlist_read=120/min`, `_write=30/min`,
+  `session_cookie_secure` (default True; conftest seta False para
+  testes via env). `.env.example` documenta os 3 settings novos.
+  Tests: `tests/test_watchlist.py` adiciona 21 testes — wiring (3),
+  cookie lifecycle (4: set no 1º, reuso, malformado, órfão), GET
+  vazio (1), POST (5: caminho feliz, idempotência, position++,
+  ordenação, enrichment), DELETE (3: remove, idempotente, 404 só
+  para desconhecido), isolamento entre sessões (2), e Alembic
+  watchlist (2: head cria as 2 tabelas, round-trip up/down/up).
+  `tests/test_alembic_migration.py` atualizado para incluir
+  `user_sessions` e `watchlist_items` em EXPECTED_TABLES.
+  Smoke test ponta-a-ponta (uvicorn + curl) confirma o ciclo
+  completo: cookie → POST → GET → DELETE → GET vazia.
+  Total: 249/249 passando + 1 skip pré-existente (21 watchlist +
+  228 anteriores).
+  Bug fix encontrado durante implementação: `WatchlistItem.id`
+  começou como `BigInteger` (autogenerate) — em SQLite, só
+  `INTEGER PRIMARY KEY` autoincrementa (BIGINT não vira rowid alias).
+  Corrigido para `Integer` em schema + migration. Watchlist é
+  per-user, range INT (~2^31) é folga sobrada.
+  Bug fix #2: `SESSION_COOKIE_SECURE=true` (default) impedia o
+  TestClient de enviar cookie sobre `http://testserver` (httpx
+  respeita Secure). Adicionado `SESSION_COOKIE_SECURE=false` em
+  `conftest.py` antes de qualquer import de backend; `.env.example`
+  documenta que dev local sobre HTTP precisa do mesmo override.
+  PR aberto sobre branch da PR #14 (stack) — auto-retarget para
+  `main` quando PRs anteriores mergearem.
 
 - 2026-04-30 — Run #14: ADR de ISSUE-018 registrado (sem implementação).
   A orientação do run anterior pediu ADR formal antes de pegar

@@ -282,3 +282,30 @@ class HealthResponse(BaseModel):
     status: str
     version: str = "1.0.0"
     database: str
+
+
+# ══════════════════════════════════════════════
+# MODELOS DE WATCHLIST (ISSUE-018)
+# ══════════════════════════════════════════════
+
+class WatchlistItemOut(BaseModel):
+    """Um item da watchlist enriquecido com dados do asset."""
+    symbol: str
+    name: str
+    asset_type: str
+    currency: Optional[str] = None
+    exchange: Optional[str] = None
+    position: int
+    added_at: datetime
+
+
+class WatchlistResponse(BaseModel):
+    """Resposta de GET /api/watchlist."""
+    items: List[WatchlistItemOut]
+
+
+class WatchlistMutationResponse(BaseModel):
+    """Resposta de POST/DELETE: estado terminal do item."""
+    symbol: str
+    in_watchlist: bool
+    position: Optional[int] = None
