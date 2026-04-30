@@ -5,6 +5,103 @@ Formato: data — título, issue de referência, decisão, alternativas, trade-o
 
 ---
 
+## 2026-04-30 — Eliminar último side effect de import em `backend/app.py`
+**Issue:** ISSUE-024 (não-catalogada, débito explicitamente listado na orientação do Run #19 como continuação natural de ISSUE-014)
+**Decisão:** `backend/app.py:32` deixa de fazer `logger = setup_logging()`
+em escopo de módulo. A nova convenção:
+1. Module-level: `logger = logging.getLogger("market_platform")` — puro
+   getattr, sem I/O em disco, sem mutação de logger global. Singleton da
+   stdlib garante que `mod.logger is logging.getLogger("market_platform")`.
+2. Lifespan startup (primeira linha): `setup_logging()` —
+   cria `logs/`, anexa StreamHandler + RotatingFileHandler. setup_logging
+   é idempotente, então re-execuções (testes que entram/saem do
+   TestClient) não duplicam handlers.
+3. As 5 linhas de banner que ficavam em escopo de módulo (separadores,
+   "🚀 Iniciando…", "✅ CORS habilitado…", "✅ Rate limiting…",
+   "✅ Frontend estático montado…" / warning de diretório ausente)
+   foram consolidadas em `_log_startup_banner()`, chamado pelo lifespan
+   logo após `setup_logging()`.
+4. Bloco `if __name__ == "__main__":` (path raramente usado: roda só
+   quando alguém invoca `python backend/app.py` direto, fora de uvicorn)
+   chama `setup_logging()` antes das duas linhas de info, caso contrário
+   sairiam para um logger sem handlers.
+
+**Por que vale a pena fazer agora.** A orientação do Run #19 elencou este
+item como o primeiro da seção "dívida técnica conhecida" — "candidato
+natural para refactor junto com ISSUE-018 ou cleanup dedicado". Fechar
+fora de feature reduz a chance de virar regressão silenciosa quando
+alguém adicionar mais imports a `app.py` em volta de testes que ainda
+fazem `from backend.app import app` em escopo de módulo (são 7 arquivos
+de teste — `test_api_smoke`, `test_prices_endpoint`, `test_cache`,
+`test_rate_limiting`, `test_periods`, `test_export_csv`, `test_watchlist`).
+
+**Alternativas consideradas:**
+1. **Deixar `setup_logging()` em module-level e marcar como aceito.**
+   Argumento: é a entry-point da aplicação, side effects no startup
+   são esperados. Contra: a linha racha o invariante que ISSUE-014
+   instalou ("importar módulo do backend é livre de I/O") em exatamente
+   o módulo mais importado pelos testes. 7 arquivos de teste fazem
+   `from backend.app import app` em scope de módulo — todos eles
+   criavam `logs/` e abriam RotatingFileHandler antes de qualquer
+   asserção rodar. Cumulativamente, o overhead é mensurável em CI
+   (cold start ~150ms a mais) e o `logs/market_platform.log` cresce
+   em ambiente de teste sem motivo. Rejeitada.
+2. **Deferir tudo via `lazy_logger` que chama setup_logging na primeira
+   chamada.** Mais elegante em teoria, mas: (i) introduz indireção
+   custom onde `logging.getLogger` da stdlib já resolve o problema;
+   (ii) exige cuidado extra para idempotência sob threads; (iii) o
+   lifespan já é o ponto natural de inicialização. Rejeitada —
+   over-engineering.
+3. **Mover `_log_startup_banner()` para um módulo separado
+   (`backend/_startup.py`).** Faria sentido se o banner crescesse, mas
+   hoje são 5 linhas que dependem de variáveis do escopo de `app.py`
+   (`cors_origins`, `settings`, `FRONTEND_DIR`). Manter no mesmo módulo
+   evita import circular ou parameter passing redundante. Rejeitada —
+   não há ganho.
+
+**Trade-off aceito.** O banner de boot continua aparecendo no início
+do startup — só que vindo do lifespan em vez de do escopo de import.
+A ordem visível no console permanece idêntica à anterior:
+
+```
+============================================================
+🚀 Iniciando market_platform_unified backend
+============================================================
+✅ CORS habilitado para: [...]
+✅ Rate limiting (slowapi) habilitado; default=60/minute
+✅ Frontend estático montado em / a partir de [...]
+🔌 Testando conexão com banco de dados...
+✅ Banco de dados conectado com sucesso
+📊 Criando/verificando tabelas...
+...
+```
+
+A diferença para o operador é imperceptível (~1ms entre uvicorn
+importar o módulo e iniciar o lifespan). Para os testes, a diferença
+é grande: `import backend.app` agora não cria `logs/`, não abre
+RotatingFileHandler, não anexa handlers ao logger global.
+
+**Referência cruzada:** continuação natural de ISSUE-014. Fecha o
+invariante "importar módulo do backend é livre de I/O em disco e
+mutação de logger" — agora cobre os 4 entry points: `connection.py`,
+`logging_config.py`, `_cache.py`, e `app.py`.
+
+**Cobertura de teste.** `tests/test_no_import_side_effects.py` ganha a
+classe `TestAppImportSideEffects` com 5 testes: spy em `setup_logging`
+durante import (asserta zero chamadas), spy em `os.makedirs` (asserta
+zero chamadas com paths de `logs/`), asserção de zero handlers novos
+no logger `market_platform` durante import (com restore em try/finally
+para não corromper testes seguintes), pureza de
+`logging.getLogger("market_platform")` no module-level (mod.logger
+deve ser o singleton), e wiring de `_log_startup_banner` (mock no
+logger do módulo, captura calls de info/warning, casa as 4 linhas-chave
+do banner). Mock-no-módulo escolhido sobre caplog/handler explícito
+porque o full-suite tem dezenas de TestClient lifespans rodando antes
+deste teste, mexendo nos handlers do logger global; mock isola o teste
+de qualquer cross-test bleed.
+
+---
+
 ## 2026-04-30 — Backups automáticos do PostgreSQL: pg_dump custom semanal + retenção 90d
 **Issue:** ISSUE-023 (não-catalogada, alavanca alta)
 **Decisão:** Backups via `pg_dump --dbname=<URL> -Fc -f <BACKUP_DIR>/market_db_<UTC>.dump`,

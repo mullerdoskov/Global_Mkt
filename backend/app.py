@@ -3,6 +3,7 @@ app.py
 FastAPI app principal do market_platform_unified backend.
 """
 
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -28,23 +29,57 @@ from backend.api._cache import init_cache_async
 # backend/app.py para não depender do CWD em que uvicorn for invocado.
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 
-# Setup logging
-logger = setup_logging()
-
-logger.info("=" * 60)
-logger.info("🚀 Iniciando market_platform_unified backend")
-logger.info("=" * 60)
+# ISSUE-024: importar `backend.app` é livre de I/O em disco — apenas referencia
+# o logger. `setup_logging()` (cria `logs/`, anexa handlers) ficou para o
+# lifespan. Antes desta issue a chamada acontecia em escopo de módulo,
+# fazendo qualquer `import backend.app` criar o diretório `logs/` e abrir
+# RotatingFileHandler. ISSUE-014 já tinha eliminado o mesmo padrão de
+# `logging_config.py` e `_cache.py`; ISSUE-024 fecha o gap em `app.py`.
+logger = logging.getLogger("market_platform")
 
 
 # ══════════════════════════════════════════════
 # LIFECYCLE — Startup / Shutdown
 # ══════════════════════════════════════════════
 
+def _log_startup_banner() -> None:
+    """Emite as linhas de banner que antes ficavam em escopo de import.
+
+    Chamado pelo lifespan logo após `setup_logging()`, mantém visibilidade
+    do estado de boot (CORS, rate limiting, mount do frontend) sem incorrer
+    em I/O em disco no momento do import.
+    """
+    logger.info("=" * 60)
+    logger.info("🚀 Iniciando market_platform_unified backend")
+    logger.info("=" * 60)
+    logger.info(f"✅ CORS habilitado para: {cors_origins}")
+    logger.info(
+        f"✅ Rate limiting (slowapi) "
+        f"{'habilitado' if settings.rate_limit_enabled else 'DESABILITADO (no-op)'}; "
+        f"default={settings.rate_limit_default}"
+    )
+    if FRONTEND_DIR.is_dir():
+        logger.info(f"✅ Frontend estático montado em / a partir de {FRONTEND_DIR}")
+    else:
+        logger.warning(
+            f"⚠️  Diretório de frontend não encontrado em {FRONTEND_DIR}; "
+            "rota / não disponível"
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
     Context manager para startup e shutdown da aplicação.
     """
+    # ISSUE-024: setup_logging() (cria `logs/`, anexa StreamHandler +
+    # RotatingFileHandler) é o primeiro passo do lifespan — não roda mais
+    # em escopo de import. setup_logging é idempotente, então re-execuções
+    # do lifespan (ex.: testes que entram/saem do TestClient) não duplicam
+    # handlers.
+    setup_logging()
+    _log_startup_banner()
+
     # STARTUP
     logger.info("🔌 Testando conexão com banco de dados...")
     if not test_connection():
@@ -113,7 +148,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-logger.info(f"✅ CORS habilitado para: {cors_origins}")
+# ISSUE-024: o "✅ CORS habilitado..." virou parte de `_log_startup_banner()`,
+# emitido pelo lifespan após setup_logging.
 
 
 # ══════════════════════════════════════════════
@@ -135,11 +171,8 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
 
-logger.info(
-    f"✅ Rate limiting (slowapi) "
-    f"{'habilitado' if settings.rate_limit_enabled else 'DESABILITADO (no-op)'}; "
-    f"default={settings.rate_limit_default}"
-)
+# ISSUE-024: o "✅ Rate limiting..." virou parte de `_log_startup_banner()`,
+# emitido pelo lifespan após setup_logging.
 
 
 # ══════════════════════════════════════════════
@@ -226,12 +259,10 @@ if FRONTEND_DIR.is_dir():
         StaticFiles(directory=FRONTEND_DIR, html=True),
         name="frontend",
     )
-    logger.info(f"✅ Frontend estático montado em / a partir de {FRONTEND_DIR}")
-else:
-    logger.warning(
-        f"⚠️  Diretório de frontend não encontrado em {FRONTEND_DIR}; "
-        "rota / não disponível"
-    )
+
+# ISSUE-024: a mensagem ("Frontend estático montado..." vs warning de diretório
+# ausente) virou parte de `_log_startup_banner()`, emitido pelo lifespan após
+# setup_logging.
 
 
 # ══════════════════════════════════════════════
@@ -241,6 +272,11 @@ else:
 if __name__ == "__main__":
     import uvicorn
 
+    # ISSUE-024: quando rodado direto (`python backend/app.py`), uvicorn é
+    # invocado a partir deste bloco — antes do lifespan que normalmente faz
+    # setup_logging. Inicializa explicitamente aqui para que as duas linhas
+    # abaixo não saiam para um logger sem handlers.
+    setup_logging()
     logger.info(f"🚀 Iniciando servidor em {settings.host}:{settings.port}")
     logger.info(f"📖 Docs disponível em http://{settings.host}:{settings.port}/docs")
 
