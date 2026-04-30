@@ -36,7 +36,8 @@ backend/
 │   ├── prices.py             # GET /api/prices (novo)
 │   ├── market.py             # GET /api/market (novo)
 │   ├── fundamentals.py       # GET /api/fundamentals (novo)
-│   └── ingestion.py          # GET /api/ingestion (novo)
+│   ├── ingestion.py          # GET /api/ingestion (novo)
+│   └── export.py             # GET /api/export/{symbol}.csv (novo)
 ├── sql/
 │   └── useful_queries.sql    # Queries para análise (novo)
 ├── requirements.txt          # Dependências Python
@@ -158,6 +159,11 @@ Variáveis de ambiente (ver `.env.example`):
 ```env
 # Vocabulário do `limits`: <count>/<seconds|minute|hour|day>
 RATE_LIMIT_DEFAULT=60/minute
+
+# Limite mais agressivo para o endpoint de exportação CSV (ISSUE-017).
+# Aplica-se a `/api/export/{symbol}.csv` apenas — demais endpoints seguem
+# `RATE_LIMIT_DEFAULT`. Valor inicial 10/min/IP.
+RATE_LIMIT_EXPORT=10/minute
 
 # Em produção: true. Em testes: false (já configurado em conftest.py).
 RATE_LIMIT_ENABLED=true

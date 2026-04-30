@@ -34,6 +34,13 @@ class Settings(BaseSettings):
     rate_limit_default: str = "60/minute"
     rate_limit_enabled: bool = True
 
+    # Rate limit dedicado para o endpoint de exportação CSV (ISSUE-017).
+    # Mais agressivo que o default: cada request retorna potencialmente
+    # milhares de linhas do banco, então sem um gate apertado, varrer
+    # todo o histórico fica trivial. Default 10/min/IP. Quando
+    # `rate_limit_enabled=False` (testes), este limite também vira no-op.
+    rate_limit_export: str = "10/minute"
+
     # Cache (ISSUE-011). Se `redis_url` setada, o backend de cache vira Redis
     # (e na presença de multi-worker, distribuído entre eles). Se não setada,
     # cai em InMemoryBackend (process-local). `cache_enabled=False` transforma

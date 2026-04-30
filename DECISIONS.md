@@ -5,6 +5,61 @@ Formato: data — título, issue de referência, decisão, alternativas, trade-o
 
 ---
 
+## 2026-04-30 — Endpoint CSV: 4 escolhas de design
+**Issue:** ISSUE-017
+**Decisão:** Endpoint `GET /api/export/{symbol}.csv` desenhado com 4
+escolhas explícitas:
+
+1. **Range vazio devolve 200 + CSV de cabeçalho-apenas, não 404.**
+   404 é "asset not found" — semântica. "Asset existe, mas não tem
+   preço no período pedido" é resposta válida (típico em ativos novos
+   ou períodos curtos sobre fim-de-semana). Cliente que faz parse do CSV
+   continua funcionando; tratar lista vazia é menos código que tratar
+   404 + 200. O contrato fica: 404 = símbolo não cadastrado.
+
+2. **Streaming via generator com `csv.writer` da stdlib + `StringIO`
+   reciclado.** 10y × 252 dias úteis ≈ 2520 linhas — não justifica
+   `pandas.to_csv`. O generator emite header antes da 1ª linha de dados,
+   evita materializar a lista inteira em memória, e mantém o handler
+   sem dependência de pandas (bom para o lifespan do processo: pandas
+   é lazy-imported só pelos endpoints que realmente precisam).
+
+3. **Filename sanitizado com regex `[^A-Za-z0-9._-]+ → _`.**
+   Símbolos como `^BVSP`, `BRL=X`, `ETH-USD` viram nomes de arquivo
+   amigáveis (`BVSP_90d.csv`, `BRL_X_90d.csv`, `ETH-USD_90d.csv`).
+   Aspas duplas no `Content-Disposition` permitem espaço/`=`/`^` em
+   teoria, mas filesystems Windows têm restrições; mais seguro
+   sanitizar.
+
+4. **Rate limit 10/min/IP em vez de 60/min/IP default.** Endpoint de
+   extração é mais "barato" para o atacante (resposta grande, custo
+   por request alto) e mais "caro" para o servidor (sweep de prices
+   table). 10/min ainda permite uso humano normal (clicar download
+   uma dúzia de vezes em 60s) mas corta scraping. Configurável em
+   `settings.rate_limit_export`; setting separado preserva
+   `rate_limit_default` para os outros endpoints.
+
+**Alternativas consideradas:**
+- `pandas.to_csv` direto sobre uma lista de dicts — rejeitado: importa
+  pandas mesmo quando o handler não está rodando o `/returns` (que é
+  o único que precisa de pandas). `csv.writer` resolve com 6 linhas.
+- Range vazio devolver 404 — rejeitado, ver item 1 acima.
+- Reusar `rate_limit_default` — rejeitado: o threat model do CSV é
+  diferente do JSON. Setting dedicado custa 1 linha e dá controle fino.
+- Suportar `start_date`/`end_date` além de `period` (como sugerido no
+  diagnóstico) — adiado para issue futura. O 95% dos casos é "últimos
+  N períodos" via `period`; range explícito vale uma issue separada
+  com seus próprios testes (intersecção período↔range, validação de
+  datas inválidas, etc.).
+
+**Trade-off:** primeira issue com setting de rate limit não-default;
+abre porta para mais "limites por endpoint" (ex.: ingestion endpoints
+podem precisar de limit ainda mais apertado). Aceitável — o vocabulário
+do `limits` permite migrar para `@limiter.limit("...")` com string
+literal a qualquer momento se a configuração virar bagunça.
+
+---
+
 ## 2026-04-30 — Universo de ativos asiáticos: 20 JP + 10 AU + 10 HK
 **Issue:** ISSUE-016
 **Decisão:** Adicionadas três listas em `backend/config/symbols.py`:

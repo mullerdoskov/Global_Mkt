@@ -31,7 +31,7 @@ Ordem = prioridade de execução. Marcações:
 
 - [x] ISSUE-015 — Agendamento incremental — PR #11, 2026-04-30 (https://github.com/mullerdoskov/Global_Mkt/pull/11)
 - [x] ISSUE-016 — Adicionar ativos asiáticos (JP/AU/HK) — PR #12, 2026-04-30 (https://github.com/mullerdoskov/Global_Mkt/pull/12)
-- [ ] ISSUE-017 — Endpoint `/api/export/{symbol}.csv`
+- [x] ISSUE-017 — Endpoint `/api/export/{symbol}.csv` — PR #13, 2026-04-30 (https://github.com/mullerdoskov/Global_Mkt/pull/13)
 - [ ] ISSUE-018 — Watchlist persistente (DB)
 
 ## Sprint 3 — Opcional, sem prioridade
@@ -40,6 +40,48 @@ Ordem = prioridade de execução. Marcações:
 - [ ] ISSUE-020 — WebSocket de preços real-time
 
 ## Histórico
+
+- 2026-04-30 — Run #13: ISSUE-017 resolvida.
+  Novo endpoint `GET /api/export/{symbol}.csv` em `backend/api/export.py`,
+  registrado no `api_router`. Devolve `StreamingResponse` com `media_type=
+  "text/csv; charset=utf-8"` e `Content-Disposition: attachment;
+  filename="<symbol>_<period>.csv"` (símbolo sanitizado: alfanuméricos +
+  `.`/`_`/`-` ficam, qualquer outra coisa vira `_`; cobre casos como
+  `^BVSP` → `BVSP`, `BRL=X` → `BRL_X`). Schema do CSV:
+  `date,open,high,low,close,adj_close,volume`, ordem cronológica
+  ascendente, `None`/NULL serializa como célula vazia.
+  Reusa `period_dep`/`parse_period` de `_periods.py` (ISSUE-012):
+  `period` aceita `<n><d|w|m|y>` no range 1d..10y, default `90d`,
+  inválido → 422 antes do streaming. Asset inexistente → 404 antes da 2ª
+  query (single round-trip). Range vazio → 200 com CSV de cabeçalho-apenas
+  (não 404, ver DECISIONS.md).
+  Streaming via generator com `csv.writer` + `StringIO` reciclado por
+  chunk — header sai antes da primeira linha de dados, sem materializar
+  a lista inteira. `Cache-Control: no-store` para impedir cache de browser
+  em data financeira.
+  Rate limit: novo setting `rate_limit_export` (default `10/minute`,
+  documentado em `.env.example`) — mais agressivo que o default
+  60/min/IP por ser endpoint de extração. Decorador
+  `@limiter.limit(settings.rate_limit_export)` aplicado.
+  `RATE_LIMIT_ENABLED=false` em testes mantém o no-op (igual aos demais
+  endpoints).
+  Tests: `tests/test_export_csv.py` adiciona 21 testes — 3 caminho feliz
+  (200 + headers + payload + filename com period custom + None→célula
+  vazia), 2 sobre 404 (asset inexistente + sem 2ª query), 8 sobre 422
+  (parametrizado: vazio/typo/decimal/sinal/maiúscula/espaço/unidade
+  desconhecida/acima do máximo), 1 sobre range vazio, 2 sobre filename
+  sanitization (`^BVSP`, `BRL=X`), 4 wiring (settings expõe
+  `rate_limit_export`, rota registrada no app, handler usa
+  StreamingResponse, decorador aplicado), e 1 enforcement real do
+  rate limit em sub-app dedicado (3ª chamada em "2/minute" → 429).
+  Total: 228/228 passando + 1 skip pré-existente (21 export + 207
+  anteriores).
+  Sem dependência de internet ou banco real: `get_session` é patched
+  com `MagicMock` que devolve mocks de `Asset`/`PriceDaily` em sequência;
+  rate limit enforcement usa sub-app FastAPI isolado (mesma estratégia
+  de `test_rate_limiting.py`).
+  PR aberto sobre branch da PR #12 (stack) — auto-retarget para `main`
+  quando PRs anteriores mergearem.
 
 - 2026-04-30 — Run #12: ISSUE-016 resolvida.
   Universo de ativos passa a cobrir Ásia/Oceania. `backend/config/symbols.py`
