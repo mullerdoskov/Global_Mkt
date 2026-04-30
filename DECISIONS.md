@@ -379,6 +379,86 @@ com `raw` (string original, para ecoar na resposta) e `delta`
 
 ---
 
+## 2026-04-30 — Lazy init dos módulos `connection`, `logging_config`, `_cache`
+**Issue:** ISSUE-014
+**Decisão:** Três módulos do backend deixam de fazer trabalho em escopo de
+import:
+
+1. **`backend/db/connection.py`** — `load_dotenv()`, `_resolve_database_url()`
+   e `create_engine()` saem do top-level. Novos pontos de entrada:
+   - `get_engine() -> Engine` cacheado via `lru_cache(maxsize=1)`. Primeira
+     chamada lê `MARKET_DB_URL`, cria engine e — se SQLite — registra o
+     listener de `PRAGMA`; chamadas seguintes devolvem o mesmo objeto.
+   - `get_sessionmaker() -> sessionmaker` também cacheado.
+   - `is_sqlite() -> bool` runtime helper (substitui o booleano
+     module-level `IS_SQLITE`).
+   - `_load_dotenv_once()` cacheado: garante que `.env` é lido no máximo
+     uma vez por processo.
+   - PEP 562 `__getattr__` mantém compat com `from connection import
+     engine, IS_SQLITE, SessionLocal, DATABASE_URL` — atributos resolvem
+     sob demanda, então o código existente continua funcionando sem
+     edição em massa.
+
+2. **`backend/config/logging_config.py`** — removida a linha
+   `logger = setup_logging()` no fim do módulo. `os.makedirs(LOG_DIR)`
+   é movido para dentro de `setup_logging()`, depois do guard de
+   handlers. Adicionado `get_logger(name=None, level=INFO)` como ponto
+   de entrada recomendado: chama `setup_logging()` (idempotente) e
+   devolve o logger root ou um child (`market_platform.<name>`).
+
+3. **`backend/api/_cache.py`** — removida a chamada `init_cache_sync()`
+   em escopo de módulo. Em produção, o lifespan do FastAPI já cobre
+   via `init_cache_async()` (que cai em `init_cache_sync` quando
+   `REDIS_URL` não está setada). Em testes, adicionada fixture autouse
+   session-scoped no `conftest.py` raiz que chama `init_cache_sync()`
+   antes de qualquer teste rodar.
+
+**Alternativas consideradas:**
+- (a) **Substituir todos os callers de `engine`/`IS_SQLITE` para usar
+  `get_engine()`/`is_sqlite()` diretamente.** Mais explícito mas
+  refatoração maior (8+ arquivos), e o objetivo da ISSUE-014 é remover
+  o side effect, não rebatizar a API. PEP 562 entrega o mesmo benefício
+  com diff focado.
+- (b) **Manter `logger = setup_logging()` no module-level.** Rejeitada:
+  é exatamente o anti-padrão que a ISSUE-014 visa eliminar — importar
+  `logging_config` cria diretório `logs/` e abre file handle, mesmo que
+  o caller só queira inspecionar a função.
+- (c) **Mover `init_cache_sync()` para fixture function-scoped.** Mais
+  isolado, mas a fixture precisaria ser explicitamente referenciada em
+  cada teste que importa `app`. Session-scoped autouse cobre todo o
+  arquivo de testes sem ergonomia adicional.
+- (d) **Inicializar o cache em um pytest_configure hook.** Equivalente
+  funcionalmente, mas hooks de pytest são menos descobríveis que
+  fixtures — o motivo da inicialização fica menos óbvio para quem lê
+  o conftest.
+
+**Trade-off:**
+- Compat via PEP 562 depende de Python 3.7+. Codebase já requer 3.11
+  (pinned em `requirements.txt` + uso de `from __future__ import
+  annotations`), então não é restrição nova.
+- Atributos lazy resolvem na primeira leitura — se múltiplos testes
+  importam `connection.engine` em paralelo, o `lru_cache` de `get_engine`
+  garante singleton mas há race window curta na 1ª chamada (irrelevante
+  para o uso atual single-threaded em testes e startup de uvicorn).
+- A fixture autouse no conftest roda 1x por sessão. Testes que tem
+  `reset_cache_state` (function-scoped) continuam funcionando porque
+  re-inicializam localmente; o estado deixado pela fixture session-scoped
+  é o "default" entre testes, não o "estado durante teste".
+
+**Como aplicar / quando revisitar:**
+- Para forçar re-criação do engine (ex.: teste muda `MARKET_DB_URL`):
+  `from backend.db.connection import get_engine, get_sessionmaker;
+  get_engine.cache_clear(); get_sessionmaker.cache_clear()`.
+- Para usar logger em código novo: `from backend.config.logging_config
+  import get_logger; logger = get_logger(__name__)` em vez de
+  `setup_logging()` — entrega o mesmo logger configurado, com nome
+  filho informativo.
+- Quando ISSUE-018 (watchlist persistente) ou outra issue precisar de
+  acesso direto ao engine, usar `get_engine()` em vez do antigo
+  `engine` global (mais explícito sobre lifecycle).
+
+---
+
 ## 2026-04-29 — Bootstrap do git em `market_platform_unified/` (pré-requisito não executado)
 **Issue:** N/A — procedimento de bootstrap
 **Decisão:** O pré-requisito de inicializar git em `market_platform_unified/` e conectar ao `mullerdoskov/Global_Mkt` não estava concluído quando a Routine rodou pela primeira vez. A Routine inicializou o repositório neste run, conectou ao remote existente, e abriu o PR #1. O histórico do nested `Global_Mkt_2.0/` (2 commits) não foi incorporado — a Routine não pode fazer força push nem rebase sem autorização humana. Lucas deve resolver o histórico em conjunto com ISSUE-001.

@@ -25,7 +25,7 @@ Ordem = prioridade de execução. Marcações:
 - [x] ISSUE-011 — Cache Redis com fastapi-cache2 — PR #7, 2026-04-30 (https://github.com/mullerdoskov/Global_Mkt/pull/7)
 - [x] ISSUE-012 — Validação robusta de `period` — PR #8, 2026-04-30 (https://github.com/mullerdoskov/Global_Mkt/pull/8)
 - [x] ISSUE-013 — Implementar `net_debt_ebitda` real — PR #9, 2026-04-30 (https://github.com/mullerdoskov/Global_Mkt/pull/9)
-- [ ] ISSUE-014 — Remover side effects de import
+- [x] ISSUE-014 — Remover side effects de import — PR aberto, 2026-04-30
 
 ## Sprint 2 — Continuidade do briefing
 
@@ -40,6 +40,33 @@ Ordem = prioridade de execução. Marcações:
 - [ ] ISSUE-020 — WebSocket de preços real-time
 
 ## Histórico
+
+- 2026-04-30 — Run #10: ISSUE-014 resolvida.
+  Três módulos deixam de fazer trabalho em escopo de import:
+  (a) `backend/db/connection.py` — `load_dotenv`, `_resolve_database_url`
+  e `create_engine` saem do top-level. Novos `get_engine()` e
+  `get_sessionmaker()` cacheados via `lru_cache(maxsize=1)`, `is_sqlite()`
+  como helper runtime. Compat com `from connection import engine,
+  IS_SQLITE, SessionLocal, DATABASE_URL` mantida via PEP 562
+  (`__getattr__`) — atributos resolvem on demand sem rodar nada no
+  import. (b) `backend/config/logging_config.py` — removida a linha
+  `logger = setup_logging()`; `os.makedirs(LOG_DIR)` só roda quando
+  alguém chama `setup_logging()`/`get_logger(name)`. Adicionado
+  `get_logger` como ponto de entrada recomendado. (c) `backend/api/_cache.py`
+  — removida a chamada `init_cache_sync()` no module-level. Em produção,
+  o lifespan já cobre via `init_cache_async`; em testes, adicionada
+  fixture autouse session-scoped no `conftest.py` raiz que faz a init
+  antes de qualquer teste rodar.
+  Tests: `tests/test_no_import_side_effects.py` (10 testes novos) prova
+  que os 3 módulos podem ser carregados em isolamento sem disparar
+  `load_dotenv`, `create_engine`, `os.makedirs(LOG_DIR)`, `addHandler`
+  ou `FastAPICache.init`. Cobre também `get_engine()` cacheado, lazy
+  attrs do PEP 562, `setup_logging` idempotente, e `get_logger` retornando
+  loggers root/child. Total: 147/147 passando + 1 skip
+  (3 alembic + 23 smoke + 9 cache + 5 db_url + 19 net_debt_ebitda +
+  10 import_side_effects + 65+1s periods + 6 prices + 7 rate_limit).
+  PR aberto sobre branch da PR #9 (stack) — auto-retarget para `main`
+  quando PRs anteriores mergearem.
 
 - 2026-04-30 — Run #9: ISSUE-013 resolvida.
   `net_debt_ebitda` deixa de ser placeholder. Duas funções públicas novas em
