@@ -28,13 +28,19 @@ pip install -r backend/requirements.txt
 
 ### 2. Setup do banco
 
-```bash
-# Com PostgreSQL
-python -m backend.cli db-init
+A criação canônica de tabelas usa Alembic (ISSUE-009):
 
-# Ou com SQLite (alterar MARKET_DB_URL no .env)
-# MARKET_DB_URL=sqlite:///market_db.sqlite
+```bash
+# Aplica todas as migrações (cria as 9 tabelas)
+alembic upgrade head
+
+# Testa conexão
+python -m backend.cli db-test
 ```
+
+`MARKET_DB_URL` (`.env`) define o destino — PostgreSQL em prod, SQLite
+em dev. Ver `BACKEND_README.md` seção "Migrações de schema" para o
+fluxo completo de evoluir o schema.
 
 ### 3. Ingestão de dados
 
@@ -95,6 +101,11 @@ removida.)
 market_platform_unified/
 ├── .env.example                     # Template de variáveis
 ├── README.md                        # Este arquivo
+├── alembic.ini                      # Config do Alembic (ISSUE-009)
+├── alembic/
+│   ├── env.py                       # Lê MARKET_DB_URL do ambiente
+│   ├── script.py.mako               # Template para novas migrações
+│   └── versions/                    # Migrações versionadas
 ├── backend/
 │   ├── app.py                       # FastAPI principal
 │   ├── cli.py                       # CLI (db-init, ingest, update, status)

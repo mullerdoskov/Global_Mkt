@@ -1,0 +1,23 @@
+Alembic — migrações de schema da Market Data Platform.
+
+A configuração do banco é lida de MARKET_DB_URL (mesma variável usada pelo
+backend desde ISSUE-004). Não há `sqlalchemy.url` em alembic.ini.
+
+Comandos comuns (rodar a partir de market_platform_unified/):
+
+  # aplicar todas as migrações pendentes
+  alembic upgrade head
+
+  # gerar nova migração a partir das mudanças no Base.metadata
+  alembic revision --autogenerate -m "descreve a mudanca"
+
+  # reverter última migração
+  alembic downgrade -1
+
+  # ver versão atual
+  alembic current
+
+  # ver histórico
+  alembic history --verbose
+
+Ver também: BACKEND_README.md seção "Migrações de schema".
