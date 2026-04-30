@@ -42,10 +42,45 @@ Ordem = prioridade de execução. Marcações:
 ## Não-catalogadas (alavanca alta, baixo risco)
 
 - [x] ISSUE-021 — CI no GitHub Actions (`alembic upgrade head` + `pytest` em SQLite) — PR #16, 2026-04-30 (https://github.com/mullerdoskov/Global_Mkt/pull/16)
-- [ ] ISSUE-022 — Comitar SKILL.md dos agents do ecossistema em `.claude/skills/` (pré-req #5 do prompt original)
+- [x] ISSUE-022 — Comitar SKILL.md dos agents do ecossistema em `.claude/skills/` (pré-req #5 do prompt original) — PR #18, 2026-04-30 (https://github.com/mullerdoskov/Global_Mkt/pull/18)
 - [x] ISSUE-023 — Backups automáticos do PostgreSQL (`pg_dump` semanal + retenção 90 dias) — PR #17, 2026-04-30 (https://github.com/mullerdoskov/Global_Mkt/pull/17)
 
 ## Histórico
+
+- 2026-04-30 — Run #18: ISSUE-022 resolvida.
+  Pré-requisito #5 do prompt original (skills do ecossistema comitadas no
+  repo) finalmente atacado. Adicionados em `.claude/skills/` os SKILL.md
+  de 13 agents do ecossistema multi-agent de Lucas (selecionados de 29
+  disponíveis no plugin install). Critério de inclusão: skills que a
+  Routine `MDP Sprint Worker` provavelmente invoca ou referencia ao
+  trabalhar em backend, arquitetura, segurança, DevOps, QA ou ingestão
+  de dados deste projeto.
+  Set incluído: `newgen` (operador do ecossistema), `project-flow-architect`
+  (orquestrador), `coo-agent` (governança), `backend-senior-engineer`
+  (persona principal), `architect-of-software` (ADRs), `qa-engineer`
+  (gate QA), `agente-devops` (CI/CD, IaC), `aquisicao-tratamento-dados`
+  (pipeline → Postgres), `front-end-dev` (Sprint 3 ISSUE-019),
+  `gerente-de-projeto` (PROGRESS), `pscw` (R1-R28), `pscw-aware-architect`
+  (defesa contra prompt injection na ingestão), `security-baseline-policy`
+  (baselines técnicas).
+  Excluídas skills de formato (`docx`, `pptx`, `pdf`, `xlsx`,
+  `canvas-design`, `algorithmic-art`, `web-artifacts-builder`),
+  product/UX (`pmo-live-companion`, `pm-prd-companion`,
+  `ux-designer-mercado-eletrico`) e meta-tools de plataforma
+  (`mcp-builder`, `ai-router`, `consolidate-memory`, `schedule`,
+  `setup-cowork`, `skill-creator`) — fora do escopo da Routine atual
+  (engenharia-only). Justificativa caso-a-caso em `.claude/skills/README.md`.
+  Apenas SKILL.md por skill — subfolders `assets/`, `references/`,
+  `scripts/` (presentes só em `newgen`) ficaram fora. Decisão registrada
+  em DECISIONS.md: o repo é espelho de **visibilidade** (reviewers
+  humanos, referenciamento por path em runs agendados, detecção de
+  drift via diff), não fonte autoritativa de carregamento — o harness
+  do Claude Code continua carregando do plugin install.
+  Sem mudanças de código, sem dependência nova. Pytest: 270/270 verdes
+  + 1 skip (idêntico ao Run #17). README dedicado documenta fluxo de
+  ressincronização (não editar à mão; abrir issue e re-rodar).
+  PR aberto sobre branch da PR #17 (stack) — auto-retarget para `main`
+  quando PRs anteriores mergearem.
 
 - 2026-04-30 — Run #17: ISSUE-023 resolvida.
   Backups automáticos do PostgreSQL via `pg_dump` em formato custom

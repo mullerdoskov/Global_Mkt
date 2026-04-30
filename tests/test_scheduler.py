@@ -310,10 +310,18 @@ def test_sh_wrapper_has_shebang_and_delegates():
 
 
 def test_sh_wrapper_passes_bash_n():
-    """bash -n faz parse syntax sem executar. Só roda se bash existir."""
+    """bash -n faz parse syntax sem executar. Só roda se bash funcional existir."""
     bash = shutil.which("bash")
     if bash is None:
         pytest.skip("bash não disponível neste ambiente")
+    probe = subprocess.run(
+        [bash, "-c", "exit 0"], capture_output=True, text=True, timeout=10
+    )
+    if probe.returncode != 0:
+        pytest.skip(
+            f"bash presente mas não funcional (provável WSL relay sem distro): "
+            f"stderr={probe.stderr!r}"
+        )
     result = subprocess.run(
         [bash, "-n", str(SH_WRAPPER)],
         capture_output=True,
