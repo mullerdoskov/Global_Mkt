@@ -9,14 +9,14 @@ Ordem = prioridade de execução. Marcações:
 
 ## Sprint 0 — Estabilização
 
-- [humano-only] ISSUE-001 — Decidir destino do nested `Global_Mkt_2.0/`
+- [humano-only] ISSUE-001 — Decidir destino do nested `Global_Mkt_2.0/` — **decisão Lucas 2026-05-04: manter o anterior com README.md** (preservar a árvore que carrega documentação histórica). Pendente: marcar a outra cópia para arquivamento + PR de cleanup.
 - [x] ISSUE-002 — Fix `GET /api/prices` (DISTINCT ON + paginação) — PR #1, 2026-04-29 (https://github.com/mullerdoskov/Global_Mkt/pull/1)
 - [x] ISSUE-003 — Fix exception handler em `app.py` — PR #1, 2026-04-29 (https://github.com/mullerdoskov/Global_Mkt/pull/1)
 - [x] ISSUE-004 — Remover senha hardcoded em `connection.py:16` e `settings.py:13` — PR #2, 2026-04-29 (https://github.com/mullerdoskov/Global_Mkt/pull/2)
-- [humano-only] ISSUE-005 — Auditar git history por senha (filter-repo é destrutivo)
+- [humano-only] ISSUE-005 — Auditar git history por senha (filter-repo é destrutivo) — **decisão Lucas 2026-05-04: filter-repo só nos commits que carregam a senha do DB exposta** (escopo restrito; não tocar em commits sem credencial). Pré-condição: rotacionar a senha real do Postgres antes (ISSUE-026 separa o código da senha, mas a senha em si — `141592` — ainda está no CSV externo e precisa trocar).
 - [x] ISSUE-006 — Smoke tests da API (cobertura completa, 1 teste por endpoint) — PR #3, 2026-04-29 (https://github.com/mullerdoskov/Global_Mkt/pull/3)
 - [x] ISSUE-007 — Servir frontend via FastAPI StaticFiles — PR #4, 2026-04-29 (https://github.com/mullerdoskov/Global_Mkt/pull/4)
-- [humano-only] ISSUE-008 — Arquivar `market_platform/` e `emergent/`
+- [humano-only] ISSUE-008 — Arquivar `market_platform/` e `emergent/` — **decisão Lucas 2026-05-04: manter o anterior com README.md** (preservar a versão que tem documentação; arquivar apenas a outra). Pendente: confirmar qual das duas tem README.md preservada e mover a sem-README para `archive/`.
 
 ## Sprint 1 — Escala
 
@@ -45,8 +45,38 @@ Ordem = prioridade de execução. Marcações:
 - [x] ISSUE-022 — Comitar SKILL.md dos agents do ecossistema em `.claude/skills/` (pré-req #5 do prompt original) — PR #18, 2026-04-30 (https://github.com/mullerdoskov/Global_Mkt/pull/18)
 - [x] ISSUE-023 — Backups automáticos do PostgreSQL (`pg_dump` semanal + retenção 90 dias) — PR #17, 2026-04-30 (https://github.com/mullerdoskov/Global_Mkt/pull/17)
 - [x] ISSUE-024 — Eliminar último side effect de import em `backend/app.py` (`setup_logging()` em escopo de módulo) — fecha o débito explicitamente listado na orientação do Run #19 como continuação natural de ISSUE-014 — PR #19, 2026-04-30 (https://github.com/mullerdoskov/Global_Mkt/pull/19)
+- [x] ISSUE-026 — Externalizar credenciais de DB para `<Documents>/Cred/8.CREDENCIAIS/2.DB/credenciais.csv` — código deixa de exigir `MARKET_DB_URL` no `.env` quando o CSV externo está disponível. Mantém env como override (CI/Docker continuam setando) — PR #21, 2026-05-04
 
 ## Histórico
+
+- 2026-05-04 — ISSUE-026 resolvida. Credenciais do DB saem de
+  `.env`/env-var-only e ganham um fallback em arquivo externo
+  `<Documents>/Cred/8.CREDENCIAIS/2.DB/credenciais.csv` (fora de qualquer
+  árvore versionada). Motivação direta da diretriz do Lucas: "tirar do
+  código e tornar ele dependente da árvore" de credenciais que ele
+  mantém em `~/Documents/Cred/8.CREDENCIAIS/`. Ordem de resolução em
+  `backend.config.credentials.resolve_database_url`: (1) `MARKET_DB_URL`
+  no env (mantém o contrato de ISSUE-004 para CI/testes/Docker); (2)
+  parse leniente do CSV em `<Documents>/Cred/8.CREDENCIAIS/2.DB/`,
+  aceitando separador `;` ou `:` (o CSV do Lucas tem `banco:energia`
+  com `:` na linha 6, demais linhas com `;` — parser tolera mistura);
+  (3) `RuntimeError` com mensagem orientativa. Wired em
+  `backend/db/connection.py:_resolve_database_url` e
+  `alembic/env.py:_get_database_url` — alembic agora roda sem env
+  setada quando o CSV existe. Tests: 26 novos em `test_credentials.py`
+  (parsing, build_url, precedência env > CSV > erro, localização do
+  `Documents/`); 4 tests existentes em `test_db_url_validation.py` e 1
+  em `test_no_import_side_effects.py` ganham fixture `sem_csv_fallback`
+  / monkeypatch em `_read_cred_file` para continuar exercitando o
+  caminho de erro env-only. Total: 301 passed + 1 skipped (de 275 + 1
+  antes). Decisões registradas neste run: (a) ISSUE-001 — Lucas
+  manda manter o anterior com README.md; (b) ISSUE-005 — filter-repo
+  só nos commits com a senha do DB exposta, sem tocar em commits sem
+  credencial; (c) ISSUE-008 — manter o anterior com README.md,
+  arquivar só a versão sem documentação. Avisos: (i) o CSV ainda
+  contém a senha leakada (`141592`) — externalizar o caminho não
+  fecha a vulnerabilidade até a senha rotacionar no Postgres real;
+  (ii) ISSUE-026 não toca o histórico git, ortogonal a ISSUE-005.
 
 - 2026-04-30 — Run #19: ISSUE-024 resolvida.
   Último resíduo de side effect de import no backend foi fechado.
