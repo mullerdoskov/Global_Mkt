@@ -5,6 +5,38 @@ Formato: data — título, issue de referência, decisão, alternativas, trade-o
 
 ---
 
+## 2026-05-04 — Externalizar credenciais de DB para árvore `<Documents>/Cred/`
+**Issue:** ISSUE-026 (não-catalogada — diretriz direta do Lucas: "tirar do código e tornar ele dependente da árvore" de credenciais).
+
+**Decisão:** o backend resolve `MARKET_DB_URL` em três etapas, em ordem:
+1. **Env var `MARKET_DB_URL`** se setada e não-vazia (override explícito; mantém o contrato de ISSUE-004 para CI/Docker/testes).
+2. **CSV externo** em `<Documents>/Cred/8.CREDENCIAIS/2.DB/credenciais.csv`, localizado subindo a partir da raiz do projeto até encontrar uma pasta `Documents` (case-insensitive). Parse leniente: aceita `;` ou `:` como separador, tolera BOM, ignora cabeçalho `key;value`, aceita variantes de nome de chave (`user`/`username`, `password`/`senha`, `port`/`porta`, `banco`/`database`/`db`).
+3. **`RuntimeError` claro** se nenhuma das duas resolver, listando ambas as opções de configuração.
+
+A lógica fica em `backend/config/credentials.py` (módulo novo, sem side effects de import) e é consumida tanto por `backend/db/connection.py:_resolve_database_url` quanto por `alembic/env.py:_get_database_url`.
+
+**Alternativas consideradas:**
+- (a) **Manter env-var-only e exigir `.env`.** Rejeitada — o usuário já mantém credenciais centralizadas em `~/Documents/Cred/`, dispersar para múltiplos `.env` é dívida de processo.
+- (b) **Vault/Keyring (Windows Credential Manager, AWS Secrets Manager).** Rejeitada para esta camada — proporcional só quando saímos da máquina única. CSV externo + env override cobre os dois cenários (dev local + CI) sem dependência nova.
+- (c) **Path do CSV configurável via env.** Rejeitada — a árvore `<Documents>/Cred/8.CREDENCIAIS/<categoria>/credenciais.csv` é convenção do usuário; tornar configurável adiciona superfície sem benefício para o caso atual.
+- (d) **Cache do resolver via `lru_cache`.** Rejeitada — testes precisam mudar env entre casos; cache obrigaria `cache_clear()` em fixtures. Função pura é mais simples; o cache real continua em `get_engine()`.
+
+**Trade-offs:**
+- ✅ Código continua sem nenhuma credencial (escopo de PSCW + ISSUE-004 mantido).
+- ✅ Dev local roda `pytest`, `uvicorn backend.app:app`, `alembic upgrade head` sem `.env` no repo.
+- ✅ CI/Docker continuam funcionando — env var tem precedência.
+- ⚠️ A senha em si (`141592`) ainda está no CSV externo. **Externalizar o caminho não fecha a exposição** — é necessário rotacionar no Postgres real (e atualizar o CSV) para fechar ISSUE-005. Os dois trabalhos são ortogonais.
+- ⚠️ Resolver o `Documents/` por nome (case-insensitive) só funciona se o repo viver dentro dessa árvore. Em outras máquinas (CI Linux, Docker), o env var é obrigatório — o que é consistente.
+
+**Decisões correlatas registradas neste run (humano-only, ditadas pelo Lucas em chat):**
+- **ISSUE-001** — manter o anterior com README.md (preservar a árvore que carrega documentação histórica do nested `Global_Mkt_2.0/`); cleanup da outra cópia em PR separado.
+- **ISSUE-005** — `git filter-repo` (ou BFG) deve atacar **apenas** os commits que carregam a senha do DB exposta, não reescrever o histórico inteiro. Pré-condição: senha rotacionada no Postgres real antes do filter (senão a string nova vazaria pelo mesmo caminho).
+- **ISSUE-008** — manter o anterior com README.md (preservar a versão documentada de `market_platform/` ou `emergent/`); arquivar só a versão sem documentação. Confirmação de qual das duas tem o README pendente.
+
+**Tests:** 26 novos em `tests/test_credentials.py`. 4 em `test_db_url_validation.py` e 1 em `test_no_import_side_effects.py` ganham mock em `_read_cred_file` para continuar exercitando o caminho env-only-aborta. Suite final: **301 passed + 1 skipped**.
+
+---
+
 ## 2026-04-30 — Eliminar último side effect de import em `backend/app.py`
 **Issue:** ISSUE-024 (não-catalogada, débito explicitamente listado na orientação do Run #19 como continuação natural de ISSUE-014)
 **Decisão:** `backend/app.py:32` deixa de fazer `logger = setup_logging()`
