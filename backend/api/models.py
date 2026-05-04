@@ -5,7 +5,7 @@ Response models Pydantic para os endpoints.
 
 from datetime import date, datetime
 from typing import Optional, List
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 # ══════════════════════════════════════════════
@@ -21,8 +21,7 @@ class AssetInfo(BaseModel):
     exchange: Optional[str] = None
     is_active: bool = True
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class CompanyInfo(BaseModel):
@@ -48,8 +47,7 @@ class AssetDetail(BaseModel):
     latest_price: Optional[float] = None
     latest_date: Optional[date] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class AssetListResponse(BaseModel):
@@ -74,8 +72,7 @@ class PriceBar(BaseModel):
     adj_close: Optional[float] = None
     volume: Optional[int] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PriceHistoryResponse(BaseModel):
@@ -93,8 +90,7 @@ class ReturnData(BaseModel):
     daily_return: Optional[float] = None
     cumulative_return: Optional[float] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ReturnsResponse(BaseModel):
@@ -113,8 +109,7 @@ class LatestPrice(BaseModel):
     price_date: Optional[date] = None
     change_pct: Optional[float] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class LatestPricesResponse(BaseModel):
@@ -198,8 +193,7 @@ class FinancialQuarter(BaseModel):
     free_cash_flow: Optional[float] = None
     currency: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class FinancialsResponse(BaseModel):
@@ -228,8 +222,7 @@ class ValuationMultiples(BaseModel):
     payout_ratio: Optional[float] = None
     net_debt_ebitda: Optional[float] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ValuationResponse(BaseModel):
@@ -254,8 +247,7 @@ class IngestionLogEntry(BaseModel):
     duration_seconds: Optional[float] = None
     error_message: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class IngestionStatusResponse(BaseModel):
