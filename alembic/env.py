@@ -8,7 +8,6 @@ processo do alembic — só `Base.metadata` é necessária aqui.
 
 from __future__ import annotations
 
-import os
 import sys
 from logging.config import fileConfig
 from pathlib import Path
@@ -41,15 +40,15 @@ target_metadata = Base.metadata
 
 
 def _get_database_url() -> str:
-    url = os.getenv("MARKET_DB_URL")
-    if not url:
-        raise RuntimeError(
-            "MARKET_DB_URL não está definida. "
-            "Configure em .env ou variável de ambiente. Exemplos:\n"
-            "  - sqlite:///market_db.sqlite (desenvolvimento)\n"
-            "  - postgresql+psycopg2://USER:PASS@host:5432/dbname (produção)"
-        )
-    return url
+    """Resolve via env → CSV externo → erro (mesmo contrato que o backend).
+
+    Delega para `backend.config.credentials.resolve_database_url` (ISSUE-026)
+    para que `alembic upgrade head` rode sem `MARKET_DB_URL` no env quando
+    o CSV em `<Documents>/Cred/8.CREDENCIAIS/2.DB/` existir.
+    """
+    from backend.config.credentials import resolve_database_url
+
+    return resolve_database_url()
 
 
 def run_migrations_offline() -> None:

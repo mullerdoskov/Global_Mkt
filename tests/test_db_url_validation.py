@@ -2,11 +2,25 @@
 tests/test_db_url_validation.py
 Valida ISSUE-004 — ausência de MARKET_DB_URL aborta com mensagem clara,
 sem cair em fallback com credencial hardcoded.
+
+ISSUE-026: agora há um fallback legítimo (CSV externo em
+`<Documents>/Cred/8.CREDENCIAIS/2.DB/`). Os testes que validam o erro
+de "env ausente" mockam o leitor do CSV para garantir que o caminho
+de erro continua funcionando quando ambas as fontes faltam.
 """
 
 import pytest
 
+from backend.config import credentials as cred_module
 from backend.db.connection import _resolve_database_url
+
+
+@pytest.fixture
+def sem_csv_fallback(monkeypatch):
+    """Desabilita o fallback do CSV — força o teste a exercitar o caminho
+    de erro do env-only.
+    """
+    monkeypatch.setattr(cred_module, "_read_cred_file", lambda: None)
 
 
 class TestResolveDatabaseUrl:
@@ -14,24 +28,31 @@ class TestResolveDatabaseUrl:
         monkeypatch.setenv("MARKET_DB_URL", "sqlite:///./qualquer.db")
         assert _resolve_database_url() == "sqlite:///./qualquer.db"
 
-    def test_levanta_runtime_error_quando_env_ausente(self, monkeypatch):
+    def test_levanta_runtime_error_quando_env_ausente(
+        self, monkeypatch, sem_csv_fallback
+    ):
         monkeypatch.delenv("MARKET_DB_URL", raising=False)
         with pytest.raises(RuntimeError, match="MARKET_DB_URL"):
             _resolve_database_url()
 
-    def test_levanta_runtime_error_quando_env_vazia(self, monkeypatch):
+    def test_levanta_runtime_error_quando_env_vazia(
+        self, monkeypatch, sem_csv_fallback
+    ):
         monkeypatch.setenv("MARKET_DB_URL", "")
         with pytest.raises(RuntimeError, match="MARKET_DB_URL"):
             _resolve_database_url()
 
-    def test_mensagem_de_erro_orienta_o_usuario(self, monkeypatch):
+    def test_mensagem_de_erro_orienta_o_usuario(
+        self, monkeypatch, sem_csv_fallback
+    ):
         monkeypatch.delenv("MARKET_DB_URL", raising=False)
         with pytest.raises(RuntimeError) as exc_info:
             _resolve_database_url()
         msg = str(exc_info.value)
         assert "sqlite" in msg.lower()
         assert "postgresql" in msg.lower()
-        assert ".env" in msg
+        # Mensagem nova (ISSUE-026) menciona o CSV externo em vez de `.env`.
+        assert "Cred/8.CREDENCIAIS/2.DB" in msg
 
     def test_sem_credencial_hardcoded_no_codigo(self):
         """Garante que a senha vazada (ISSUE-004 / ISSUE-005) não voltou ao código.

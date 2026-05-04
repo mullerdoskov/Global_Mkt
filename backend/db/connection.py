@@ -39,20 +39,17 @@ def _load_dotenv_once() -> None:
 
 
 def _resolve_database_url() -> str:
-    """Lê `MARKET_DB_URL` do ambiente. Aborta com mensagem clara se ausente.
+    """Resolve `MARKET_DB_URL`. Ordem: env → CSV externo → erro.
 
-    Não há fallback: credenciais hardcoded violam PSCW e ISSUE-004.
+    Delega para `backend.config.credentials.resolve_database_url`, que
+    aceita também o arquivo CSV em `<Documents>/Cred/8.CREDENCIAIS/2.DB/`
+    como fonte (ISSUE-026). Mantém o contrato de erro claro de ISSUE-004
+    quando nenhuma fonte resolve.
     """
     _load_dotenv_once()
-    url = os.getenv("MARKET_DB_URL")
-    if not url:
-        raise RuntimeError(
-            "MARKET_DB_URL não está definida. "
-            "Configure em .env ou variável de ambiente. Exemplos:\n"
-            "  - sqlite:///market_db.sqlite (desenvolvimento)\n"
-            "  - postgresql+psycopg2://USER:PASS@host:5432/dbname (produção)"
-        )
-    return url
+    from backend.config.credentials import resolve_database_url
+
+    return resolve_database_url()
 
 
 def _is_sqlite_url(url: str) -> bool:

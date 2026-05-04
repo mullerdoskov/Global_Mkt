@@ -88,6 +88,12 @@ class TestConnectionImportSideEffects:
         import dotenv as _dotenv_mod
         monkeypatch.setattr(_dotenv_mod, "load_dotenv", lambda *a, **kw: False)
 
+        # ISSUE-026: também desabilitar o fallback do CSV externo, senão o
+        # arquivo de credenciais do dev (`<Documents>/Cred/...`) atende a
+        # request e o caminho de erro nunca dispara.
+        from backend.config import credentials as _cred_mod
+        monkeypatch.setattr(_cred_mod, "_read_cred_file", lambda: None)
+
         # Mas tentar ler `engine` AGORA deve levantar — o erro foi adiado,
         # não eliminado.
         with pytest.raises(RuntimeError, match="MARKET_DB_URL"):
