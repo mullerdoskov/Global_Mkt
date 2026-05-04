@@ -5,7 +5,7 @@ Configurações centralizadas usando pydantic-settings.
 
 from typing import Optional
 
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -62,11 +62,14 @@ class Settings(BaseSettings):
     redis_url: Optional[str] = None
     cache_enabled: bool = True
 
-    class Config:
-        """Configuração de origem dos valores."""
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        case_sensitive = False
+    # Migrado de `class Config:` para `SettingsConfigDict` (Pydantic v2,
+    # ISSUE-025). Mesmas chaves, mesma semântica — apenas elimina o warning
+    # de `class-based config` deprecated em Pydantic V2.
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+    )
 
 
 # Instância global de settings
